@@ -2,6 +2,10 @@
 # James Kaden Cassidy
 # kacassidy@hmc.edu
 # 1/22/26
+# Edited by
+# Christian LamAlvarez
+# 2/12/26
+# clamalvarez@hmc.edu
 
 XLEN       ?= 32
 ARCH       ?= rv$(XLEN)i_zicsr
@@ -18,7 +22,13 @@ WORK_DIR   ?= $(CURDIR)/work
 CFLAGS  := -march=$(ARCH) -mabi=$(ABI) -O0 -g -ffreestanding -ffunction-sections -fdata-sections -Wall -Wextra
 LDFLAGS := -march=$(ARCH) -mabi=$(ABI) -nostdlib -Wl,--gc-sections -T $(LINKER)
 
-SRC := $(sort $(shell find $(CURDIR) -type f \( -name "*.S" -o -name "*.c" \)))
+C_TESTS_DIR ?= $(CURDIR)/../C/tests
+C_TESTS     := $(sort $(wildcard $(C_TESTS_DIR)/*.S))
+
+SRC := $(sort \
+  $(shell find $(CURDIR) -type f \( -name "*.S" -o -name "*.c" \)) \
+  $(C_TESTS) \
+)
 
 # Only complain when actually building
 define require_linker
