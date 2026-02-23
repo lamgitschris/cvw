@@ -5,21 +5,28 @@
 module datapath(
         input   logic           clk, reset,
         input   logic [2:0]     Funct3,
-        input   logic           ALUResultSrc, ResultSrc,
+        input   logic           ALUResultSrc,
+        input   logic [1:0]     ResultSrc,
         input   logic [1:0]     ALUSrc,
         input   logic           RegWrite,
-        input   logic [1:0]     ImmSrc,
+        input   logic [2:0]     ImmSrc,
         input   logic [1:0]     ALUControl,
         output  logic           Eq,
+        output  logic           LT,
+        output  logic           LTU,
         input   logic [31:0]    PC, PCPlus4,
         input   logic [31:0]    Instr,
+        input   logic [1:0]    JumpType,
         output  logic [31:0]    IEUAdr, WriteData,
         input   logic [31:0]    ReadData
     );
 
     logic [31:0] ImmExt;
     logic [31:0] R1, R2, SrcA, SrcB;
-    logic [31:0] ALUResult, IEUResult, Result;
+    logic [31:0] ALUResult, IEUResult, ResultPre, Result;
+
+    // Added
+    logic [31:0] IEUAdrRaw;
 
     // register file logic
     regfile rf(.clk, .WE3(RegWrite), .A1(Instr[19:15]), .A2(Instr[24:20]),
@@ -28,15 +35,21 @@ module datapath(
     extend ext(.Instr(Instr[31:7]), .ImmSrc, .ImmExt);
 
     // ALU logic
-    cmp cmp(.R1, .R2, .Eq);
+    cmp cmp(.R1, .R2, .Eq, .LT, .LTU);
 
     mux2 #(32) srcamux(R1, PC, ALUSrc[1], SrcA);
     mux2 #(32) srcbmux(R2, ImmExt, ALUSrc[0], SrcB);
 
-    alu alu(.SrcA, .SrcB, .ALUControl, .Funct3, .ALUResult, .IEUAdr);
+    alu alu(.SrcA, .SrcB, .ALUControl, .Funct3, .Funct7(Instr[31:25]), .ALUResult, .IEUAdr(IEUAdrRaw));
 
     mux2 #(32) ieuresultmux(ALUResult, PCPlus4, ALUResultSrc, IEUResult);
-    mux2 #(32) resultmux(IEUResult, ReadData, ResultSrc, Result);
+    // Two stage select for immext addition
+    mux2 #(32) resultmux0(IEUResult, ReadData, ResultSrc[0], ResultPre);
+    mux2 #(32) resultmux1(ResultPre, ImmExt, ResultSrc[1], Result);
+
+    // Jump Logic
+    // JumpType encodings from controller: J_NONE=0, J_JAL=1, J_JALR=2
+    assign IEUAdr = (JumpType == 2'd2) ? {IEUAdrRaw[31:1], 1'b0} : IEUAdrRaw;
 
     assign WriteData = R2;
 endmodule
