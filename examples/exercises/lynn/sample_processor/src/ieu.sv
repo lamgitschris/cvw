@@ -24,6 +24,9 @@ module ieu(
     logic [3:0] WriteByteEnRaw;
     logic [31:0] WriteDataRaw;
     logic [31:0] LoadDataExt;
+    logic [31:0] DAdr;
+
+    assign DAdr = 32'h8000_0000 | (IEUAdr & 32'h007F_FFFF);
 
     controller c(.Op(Instr[6:0]), .Eq, .LT, .LTU, .Funct3(Instr[14:12]), .Funct7(Instr[31:25]),
         .ALUResultSrc, .ResultSrc, .WriteByteEn(WriteByteEnRaw), .PCSrc,

@@ -24,10 +24,23 @@ module riscvsingle (
     logic PCSrc;
     logic Load;
 
-    ifu ifu(.clk, .reset, .PCSrc, .IEUAdr, .PC, .PCPlus4);
+    // Memory Bound Error Update
+    logic [31:0] IEUAdrRaw;
+    logic [31:0] DAdr;
+
+    localparam logic [31:0] DMEM_BASE = 32'h8000_0000;
+    localparam logic [31:0] DMEM_MASK = 32'h007F_FFFF; // 8MB-1 (matches TOP=0x807ffffc)
+
+    ifu ifu(.clk, .reset, .PCSrc, .IEUAdr(IEUAdrRaw), .PC, .PCPlus4);
     ieu ieu(.clk, .reset, .Instr, .PC, .PCPlus4, .PCSrc, .WriteByteEn,
-            .IEUAdr, .WriteData, .ReadData, .MemEn
+            .IEUAdr(IEUAdrRaw), .WriteData, .ReadData, .MemEn
         );
+
+    logic [31:0] DAdrWrapped;
+
+    assign DAdrWrapped = DMEM_BASE | (IEUAdrRaw & DMEM_MASK);
+    assign DAdr = {DAdrWrapped[31:2], 2'b00};  // word-align for RAM
+    assign IEUAdr = DAdr;
 
     assign WriteEn = |WriteByteEn;
 endmodule
