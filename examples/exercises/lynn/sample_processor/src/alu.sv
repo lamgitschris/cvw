@@ -42,6 +42,7 @@ module alu(
             3'b001: ALUResult = SrcA << shamt;        // sll / slli
             3'b010: ALUResult = SLT;                  // slt (signed)
             3'b011: ALUResult = SLTU;                 // sltu / sltiu
+            3'b100: ALUResult = SrcA ^ SrcB;          // xor/xori
             3'b101: begin                             // srl/sra + srli/srai
                 if (Funct7[5]) ALUResult = $signed(SrcA) >>> shamt; // sra / srai
                 else           ALUResult = SrcA >> shamt;           // srl / srli
