@@ -6,11 +6,12 @@ module datapath(
         input   logic           clk, reset,
         input   logic [2:0]     Funct3,
         input   logic           ALUResultSrc,
-        input   logic [1:0]     ResultSrc,
+        input   logic [2:0]     ResultSrc,
         input   logic [1:0]     ALUSrc,
         input   logic           RegWrite,
         input   logic [2:0]     ImmSrc,
         input   logic [1:0]     ALUControl,
+        input   logic [31:0]    CsrReadData,
         output  logic           Eq,
         output  logic           LT,
         output  logic           LTU,
@@ -23,7 +24,7 @@ module datapath(
 
     logic [31:0] ImmExt;
     logic [31:0] R1, R2, SrcA, SrcB;
-    logic [31:0] ALUResult, IEUResult, ResultPre, Result;
+    logic [31:0] ALUResult, IEUResult, ResultPre, ResultMid, Result;
 
     // Added
     logic [31:0] IEUAdrRaw;
@@ -43,9 +44,10 @@ module datapath(
     alu alu(.SrcA, .SrcB, .ALUControl, .Funct3, .Funct7(Instr[31:25]), .ALUResult, .IEUAdr(IEUAdrRaw));
 
     mux2 #(32) ieuresultmux(ALUResult, PCPlus4, ALUResultSrc, IEUResult);
-    // Two stage select for immext addition
+    // Two stage select for immext addition; three stage to make sure we can do CSR
     mux2 #(32) resultmux0(IEUResult, ReadData, ResultSrc[0], ResultPre);
-    mux2 #(32) resultmux1(ResultPre, ImmExt, ResultSrc[1], Result);
+    mux2 #(32) resultmux1(ResultPre, ImmExt,   ResultSrc[1], ResultMid);
+    mux2 #(32) resultmux2(ResultMid, CsrReadData, ResultSrc[2], Result);
 
     // Jump Logic
     // JumpType encodings from controller: J_NONE=0, J_JAL=1, J_JALR=2

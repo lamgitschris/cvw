@@ -12,7 +12,7 @@ module controller(
         input   logic [2:0]   Funct3,
         input   logic [6:0]   Funct7,
         output  logic         ALUResultSrc,
-        output  logic [1:0]   ResultSrc,
+        output  logic [2:0]   ResultSrc,
         output  logic [3:0]   WriteByteEn,
         output  logic         PCSrc,
         output  logic         RegWrite,
@@ -61,12 +61,12 @@ module controller(
     logic Branch, Jump;
     logic Sub, ALUOp;
     logic MemWrite;
-    logic [13:0] controls;
+    logic [14:0] controls;
 
     // Main decoder
     always_comb begin
         // Defaults (safe / do-nothing)
-        controls   = 14'b0;
+        controls   = 15'b0;
         BranchType = BR_BEQ;
         LoadType   = LD_LW;
         StoreType  = ST_SW;
@@ -75,7 +75,7 @@ module controller(
         case (Op)
             // lw
             7'b0000011: begin
-                controls = 14'b1_000_01_0_0_0_01_0_0_1;
+                controls = 15'b1_000_01_0_0_0_001_0_0_1;
                 // Phase 0: classify load by funct3 (only lw used now, but we map the rest)
                 case (Funct3)
                     3'b000: LoadType = LD_LB;
@@ -89,7 +89,7 @@ module controller(
 
             // sw
             7'b0100011: begin
-                controls = 14'b0_001_01_0_0_1_00_0_0_1;
+                controls = 15'b0_001_01_0_0_1_000_0_0_1;
                 case (Funct3)
                     3'b000: StoreType = ST_SB;
                     3'b001: StoreType = ST_SH;
@@ -100,17 +100,17 @@ module controller(
 
             // R-type
             7'b0110011: begin
-                controls = 14'b1_xxx_00_1_0_0_00_0_0_0;
+                controls = 15'b1_xxx_00_1_0_0_000_0_0_0;
             end
 
             // I-type ALU
             7'b0010011: begin
-                controls = 14'b1_000_01_1_0_0_00_0_0_0;
+                controls = 15'b1_000_01_1_0_0_000_0_0_0;
             end
 
             // branches
             7'b1100011: begin
-                controls = 14'b0_010_11_0_0_0_00_1_0_0;
+                controls = 15'b0_010_11_0_0_0_000_1_0_0;
                 case (Funct3)
                     3'b000: BranchType = BR_BEQ;
                     3'b001: BranchType = BR_BNE;
@@ -124,7 +124,7 @@ module controller(
 
             // jal
             7'b1101111: begin
-                controls = 14'b1_011_11_0_1_0_00_0_1_0;
+                controls = 15'b1_011_11_0_1_0_000_0_1_0;
                 JumpType = J_JAL;
             end
 
@@ -132,39 +132,47 @@ module controller(
             7'b1100111: begin
                 // rd = PC+4, PC = (rs1 + immI) & ~1
                 // Only valid encoding is funct3=000, but we’ll just treat others as default for now
-                controls  = 14'b1_000_01_0_1_0_00_0_1_0; // RegWrite, ImmSrc=I, ALUSrc=01 (A=R1, B=Imm), add, write PC+4, Jump=1
+                controls = 15'b1_000_01_0_1_0_000_0_1_0; // RegWrite, ImmSrc=I, ALUSrc=01 (A=R1, B=Imm), add, write PC+4, Jump=1
                 JumpType  = J_JALR;
             end
 
             // lui
             7'b0110111: begin
                 // rd = immU
-                controls  = 14'b1_100_00_0_0_0_10_0_0_0; // ResultSrc=10 selects ImmExt
+                controls = 15'b1_100_00_0_0_0_010_0_0_0; // ResultSrc=10 selects ImmExt
                 JumpType  = J_NONE;
             end
 
+            // auipc
             7'b0010111: begin
                 // rd = PC + immU
-                controls  = 14'b1_100_11_0_0_0_00_0_0_0; // ALUSrc=11 => SrcA=PC, SrcB=ImmExt
+                controls = 15'b1_100_11_0_0_0_000_0_0_0; // ALUSrc=11 => SrcA=PC, SrcB=ImmExt
                 JumpType  = J_NONE;
+            end
+
+            // csrrs rd, csr, x0  (read-only CSR access for this lab)
+            7'b1110011: begin
+                if (Funct3 == 3'b010) begin
+                    controls = 15'b1_000_00_0_0_0_100_0_0_0; // write back CSR read data
+                end
             end
 
             default: begin
                 `ifdef DEBUG
-                    controls = 12'bx_xx_xx_x_x_x_x_x_x_x;
+                    controls = 15'bx_xxx_xx_x_x_x_xxx_x_x_x;
                     if ((insn_debug !== 'x)) begin
                     $display("Instruction not implemented: %h", insn_debug);
                     $finish(-1);
                     end
                 `else
-                    controls = 12'b0;
+                    controls = 15'b0;
                 `endif
             end
         endcase
     end
 
     assign {RegWrite, ImmSrc, ALUSrc, ALUOp, ALUResultSrc, MemWrite,
-        ResultSrc, Branch, Jump, MemEn} = controls;
+    ResultSrc, Branch, Jump, MemEn} = controls;
 
     // ALU Control Logic
     assign Sub = ALUOp & ((Funct3 == 3'b000) & Funct7[5] & Op[5] | (Funct3 == 3'b010)); // subtract or SLT

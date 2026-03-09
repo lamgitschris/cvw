@@ -24,23 +24,53 @@ module riscvsingle (
     logic PCSrc;
     logic Load;
 
-    // Memory Bound Error Update
+    // Memory Bounding
     logic [31:0] IEUAdrRaw;
     logic [31:0] DAdr;
+    logic [31:0] DAdrWrapped;
 
+    // Time Counting Csr
+    logic [63:0] TimeCounter;
+    logic [31:0] ReadDataMem, ReadDataFinal, ReadDataMMIO;
+    logic IsTimeLo, IsTimeHi, IsTimeMMIO;
+    logic MemEnRAM;
+    logic [3:0] WriteByteEnRAM;
+    logic        MemEnIEU;
+    logic [3:0]  WriteByteEnIEU;
+    logic [31:0] WriteDataIEU;
+
+    // Address Checks
+    assign IsTimeLo   = (IEUAdrRaw == 32'h0200BFF8);
+    assign IsTimeHi   = (IEUAdrRaw == 32'h0200BFFC);
+    assign IsTimeMMIO = IsTimeLo | IsTimeHi;
+
+    // MMIO read mux
+    assign ReadDataMem = ReadData;
+    assign ReadDataMMIO = IsTimeLo ? TimeCounter[31:0] :
+                      IsTimeHi ? TimeCounter[63:32] :
+                                 32'b0;
+
+    assign ReadDataFinal = IsTimeMMIO ? ReadDataMMIO : ReadDataMem;
+
+    // No RAM access when timer address
+    assign MemEnRAM       = MemEnIEU & ~IsTimeMMIO;
+    assign WriteByteEnRAM = IsTimeMMIO ? 4'b0000 : WriteByteEnIEU;
+
+    // Memory Bound Error Update
     localparam logic [31:0] DMEM_BASE = 32'h8000_0000;
     localparam logic [31:0] DMEM_MASK = 32'h007F_FFFF; // 8MB-1 (matches TOP=0x807ffffc)
 
     ifu ifu(.clk, .reset, .PCSrc, .IEUAdr(IEUAdrRaw), .PC, .PCPlus4);
-    ieu ieu(.clk, .reset, .Instr, .PC, .PCPlus4, .PCSrc, .WriteByteEn,
-            .IEUAdr(IEUAdrRaw), .WriteData, .ReadData, .MemEn
-        );
-
-    logic [31:0] DAdrWrapped;
+    ieu ieu(.clk, .reset, .Instr, .PC, .PCPlus4, .PCSrc, .WriteByteEn(WriteByteEnIEU),
+        .IEUAdr(IEUAdrRaw), .WriteData(WriteDataIEU), .ReadData(ReadDataFinal), .MemEn(MemEnIEU), .TimeCounter(TimeCounter)
+    );
 
     assign DAdrWrapped = DMEM_BASE | (IEUAdrRaw & DMEM_MASK);
-    assign DAdr = {DAdrWrapped[31:2], 2'b00};  // word-align for RAM
-    assign IEUAdr = DAdr;
+    assign DAdr = {DAdrWrapped[31:2], 2'b00};
+    assign IEUAdr = IsTimeMMIO ? IEUAdrRaw : DAdr;
 
-    assign WriteEn = |WriteByteEn;
+    assign WriteData   = WriteDataIEU;
+    assign WriteEn     = |WriteByteEnRAM;
+    assign WriteByteEn = WriteByteEnRAM;
+    assign MemEn       = MemEnRAM;
 endmodule
