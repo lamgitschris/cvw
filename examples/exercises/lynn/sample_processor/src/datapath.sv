@@ -10,7 +10,7 @@ module datapath(
         input   logic [1:0]     ALUSrc,
         input   logic           RegWrite,
         input   logic [2:0]     ImmSrc,
-        input   logic [1:0]     ALUControl,
+        input   logic [2:0]     ALUControl,
         input   logic [31:0]    CsrReadData,
         output  logic           Eq,
         output  logic           LT,

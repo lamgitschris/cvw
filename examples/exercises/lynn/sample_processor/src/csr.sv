@@ -21,7 +21,7 @@ module csr(
     logic [63:0] hpm_counter [3:31];
     integer i;
 
-    always_ff @(posedge clk) begin
+    always_ff @(posedge clk or posedge reset) begin
         if (reset) begin
             cycle_counter   <= 64'd0;
             time_counter    <= 64'd0;
@@ -76,7 +76,6 @@ module csr(
 
             default: CsrReadData = 32'h00000000;
         endcase
-        assign TimeCounter = time_counter;
     end
-
+    assign TimeCounter = time_counter;
 endmodule

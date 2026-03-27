@@ -19,7 +19,7 @@ module ieu(
     logic RegWrite, Jump, Eq, LT, LTU, ALUResultSrc;
     logic [1:0] ALUSrc;
     logic [2:0] ImmSrc, ResultSrc;
-    logic [1:0] ALUControl;
+    logic [2:0] ALUControl;
     logic [2:0] BranchType, LoadType;
     logic [1:0] StoreType, JumpType;
     logic [3:0] WriteByteEnRaw;

@@ -18,7 +18,7 @@ module controller(
         output  logic         RegWrite,
         output  logic [1:0]   ALUSrc,
         output  logic [2:0]   ImmSrc,
-        output  logic [1:0]   ALUControl,
+        output  logic [2:0]   ALUControl,
         output  logic         MemEn,
         output logic [2:0] BranchType,
         output logic [2:0] LoadType,
@@ -76,6 +76,7 @@ module controller(
             // lw
             7'b0000011: begin
                 controls = 15'b1_000_01_0_0_0_001_0_0_1;
+                ALUControl = 3'b000; // force add
                 // Phase 0: classify load by funct3 (only lw used now, but we map the rest)
                 case (Funct3)
                     3'b000: LoadType = LD_LB;
@@ -90,6 +91,7 @@ module controller(
             // sw
             7'b0100011: begin
                 controls = 15'b0_001_01_0_0_1_000_0_0_1;
+                ALUControl = 3'b000; // force add
                 case (Funct3)
                     3'b000: StoreType = ST_SB;
                     3'b001: StoreType = ST_SH;
@@ -101,16 +103,22 @@ module controller(
             // R-type
             7'b0110011: begin
                 controls = 15'b1_xxx_00_1_0_0_000_0_0_0;
+                if (Funct7 == 7'b0000001)
+                    ALUControl = 3'b010; // mul-family
+                else
+                    ALUControl = 3'b011; // normal R-type ALU
             end
 
             // I-type ALU
             7'b0010011: begin
                 controls = 15'b1_000_01_1_0_0_000_0_0_0;
+                ALUControl = 3'b001; // normal funct3 decode
             end
 
             // branches
             7'b1100011: begin
                 controls = 15'b0_010_11_0_0_0_000_1_0_0;
+                ALUControl = 3'b000; // normal funct3 decode
                 case (Funct3)
                     3'b000: BranchType = BR_BEQ;
                     3'b001: BranchType = BR_BNE;
@@ -133,6 +141,7 @@ module controller(
                 // rd = PC+4, PC = (rs1 + immI) & ~1
                 // Only valid encoding is funct3=000, but we’ll just treat others as default for now
                 controls = 15'b1_000_01_0_1_0_000_0_1_0; // RegWrite, ImmSrc=I, ALUSrc=01 (A=R1, B=Imm), add, write PC+4, Jump=1
+                ALUControl = 3'b000; // force add
                 JumpType  = J_JALR;
             end
 
@@ -147,6 +156,7 @@ module controller(
             7'b0010111: begin
                 // rd = PC + immU
                 controls = 15'b1_100_11_0_0_0_000_0_0_0; // ALUSrc=11 => SrcA=PC, SrcB=ImmExt
+                ALUControl = 3'b000; // force add
                 JumpType  = J_NONE;
             end
 
@@ -158,6 +168,7 @@ module controller(
             end
 
             default: begin
+                ALUControl = 3'b000;
                 `ifdef DEBUG
                     controls = 15'bx_xxx_xx_x_x_x_xxx_x_x_x;
                     if ((insn_debug !== 'x)) begin
@@ -173,10 +184,6 @@ module controller(
 
     assign {RegWrite, ImmSrc, ALUSrc, ALUOp, ALUResultSrc, MemWrite,
     ResultSrc, Branch, Jump, MemEn} = controls;
-
-    // ALU Control Logic
-    assign Sub = ALUOp & ((Funct3 == 3'b000) & Funct7[5] & Op[5] | (Funct3 == 3'b010)); // subtract or SLT
-    assign ALUControl = {Sub, ALUOp};
 
     // PCSrc logic
     logic BranchTaken;
