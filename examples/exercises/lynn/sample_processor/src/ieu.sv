@@ -141,13 +141,16 @@ module ieu (
 
     // CSR file — reads counters combinationally in EX stage
     // HPM events driven by EX-stage instruction classification
-    csrfile csr (
-        .clk, .reset,
+        csrfile csr (
+        .clk         (clk),
+        .reset       (reset),
         .csradr      (CSRAdrE),
         .op          (OpE),
         .funct3      (Funct3E),
         .funct7b5    (Funct7E[5]),
-        .branchop    (BranchOpE),   // branch condition result from cmp unit
+        .branchop    (BranchOpE),
+        .rs1data     (FSrcAE),
+        .rs1addr     (Rs1E),
         .csrreaddata (CSRReadDataE),
         .TimeCounter (TimeCounter)
     );

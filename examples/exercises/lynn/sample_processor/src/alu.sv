@@ -32,7 +32,7 @@ module alu (
     assign overflow = (srca[31] ^ condinvb[31]) & (srca[31] ^ sum[31]);
     assign neg      = sum[31];
     assign lt       = neg ^ overflow;
-    assign slt      = {31'b0, lt};
+    assign slt  = {31'b0, ($signed(srca) < $signed(srcb))};
     assign sltu     = {31'b0, (srca < srcb)};
 
     always_comb begin

@@ -31,8 +31,9 @@ module lsu (
     // interception are handled at the top level (riscvpipe.sv)
     assign IEUAdr    = ALUResultM;
     assign MemEn     = MemEnM;
-    assign IEUResultM = ALUResultM;  // load data not yet available — forward ALU result
-
+    // Forward the actual MEM-stage value for ALU/CSR producers.
+    // Loads still rely on the load-use stall, so forwarding ReadData is not needed here.
+    assign IEUResultM = CSRSrcM ? CSRReadDataM : ALUResultM;
     // ----------------------------------------------------------------
     // Store byte enables and write data replication
     // ----------------------------------------------------------------
