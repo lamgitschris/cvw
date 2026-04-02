@@ -3,19 +3,19 @@
 //
 // ALUSrc[1] — SrcA mux:   0=register file   1=PC         (AUIPC, JAL, branches)
 // ALUSrc[0] — SrcB mux:   0=register file   1=immediate  (I/S/B/U/J types)
-// ALUOp     — ALU decoder: 0=force add path  1=use funct fields
-// ALUResultSrc — result mux: 1=write PC+4 to Rd (JAL/JALR link address)
-// ResultSrc    — WB mux:     1=write load data to Rd
-// MemEn     — enable data memory read or write
+// alucontrol — 3-bit:     000=force add, 001=I-type, 010=Zmmul, 011=R-type
+// aluresultsrc — result mux: 1=write PC+4 to Rd (JAL/JALR link address)
+// resultsrc    — WB mux:     1=write load data to Rd
+// memen     — enable data memory read or write
 
 module controller (
     input  logic [6:0] op,
     input  logic [2:0] funct3,
-    input  logic       funct7b5,        // instr[30]
+    input  logic [6:0] funct7,          // full funct7 field; needed to detect Zmmul
     output logic       regwrite,
     output logic [2:0] immsrc,
     output logic [1:0] alusrc,
-    output logic [1:0] alucontrol,
+    output logic [2:0] alucontrol,      // 3-bit: 000=force add,001=I-type,010=Zmmul,011=R-type
     output logic       aluresultsrc,
     output logic       memwrite,
     output logic       resultsrc,
@@ -25,7 +25,6 @@ module controller (
     output logic       lui
 );
     logic [1:0] aluop;
-    logic       sub;
 
     // Main decoder — one hot row per opcode
     // Fields: RegWrite | ImmSrc[2:0] | ALUSrc[1:0] | ALUOp[1:0] | ALUResultSrc | MemWrite | ResultSrc | Branch | Jump | MemEn
@@ -50,7 +49,7 @@ module controller (
             7'b0110111: controls = 14'b1_100_01_00_0_0_0_0_0_0;
             // AUIPC   — U-type; SrcA=PC, SrcB=Imm, ALU adds them
             7'b0010111: controls = 14'b1_100_11_00_0_0_0_0_0_0;
-            // CSR     — reads cycle/instret counter; RegWrite passes CSR data to Rd
+            // CSR     — reads cycle/instret/hpm counters; RegWrite passes CSR data to Rd
             7'b1110011: controls = 14'b1_000_01_00_0_0_0_0_0_0;
             default:    controls = 14'b0;
         endcase
@@ -59,9 +58,19 @@ module controller (
             aluresultsrc, memwrite, resultsrc,
             branch, jump, memen} = controls;
 
-    // ALU decoder: SUB only for R-type ADD when funct7b5 is set
-    assign sub        = aluop[1] & (funct3 == 3'b000) & funct7b5 & op[5];
-    assign alucontrol = {sub, aluop[1]};
+    // 3-bit ALU control decoder
+    // aluop==10: R-type or I-type; distinguish by op[5]
+    // Zmmul: R-type with funct7 == 7'b0000001 (M-extension multiply)
+    always_comb
+        if (aluop == 2'b10) begin
+            if (op[5] && funct7 == 7'b0000001)
+                alucontrol = 3'b010;  // Zmmul (mul/mulh/mulhsu/mulhu)
+            else if (op[5])
+                alucontrol = 3'b011;  // R-type normal (add/sub/sll/slt/...)
+            else
+                alucontrol = 3'b001;  // I-type ALU (addi/slli/slti/...)
+        end else
+            alucontrol = 3'b000;      // force add (loads/stores/branches/jumps/auipc/csr)
 
     // LUI bypasses the adder — just passes the immediate through the ALU
     assign lui = (op == 7'b0110111);

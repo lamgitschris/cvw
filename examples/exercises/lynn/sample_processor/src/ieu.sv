@@ -31,7 +31,9 @@ module ieu (
     output logic [31:0] CSRReadDataM,
     // To hazard unit
     output logic [4:0]  Rs1E, Rs2E, RdE,
-    output logic        ResultSrcE    // high when EX-stage instruction is a load
+    output logic        ResultSrcE,    // high when EX-stage instruction is a load
+    // Timer counter for MMIO reads (0x0200BFF8/BFFC)
+    output logic [63:0] TimeCounter
 );
 
     // ----------------------------------------------------------------
@@ -41,7 +43,8 @@ module ieu (
     logic [2:0]  ImmSrcD;
     logic        RegWriteD, ALUResultSrcD, MemWriteD, ResultSrcD;
     logic        BranchD, JumpD, MemEnD, LuiD, CSRSrcD;
-    logic [1:0]  ALUSrcD, ALUControlD;
+    logic [1:0]  ALUSrcD;
+    logic [2:0]  ALUControlD;
 
     regfile rf (
         .clk,
@@ -59,7 +62,7 @@ module ieu (
     controller ctrl (
         .op          (InstrD[6:0]),
         .funct3      (InstrD[14:12]),
-        .funct7b5    (InstrD[30]),
+        .funct7      (InstrD[31:25]),   // full funct7 for Zmmul detection
         .regwrite    (RegWriteD),
         .immsrc      (ImmSrcD),
         .alusrc      (ALUSrcD),
@@ -73,7 +76,7 @@ module ieu (
         .lui         (LuiD)
     );
 
-    // CSRSrc: set for CSRRS/CSRRCI (op=1110011) so writeback selects CSR read data
+    // CSRSrc: set for any CSR instruction (op=1110011) so writeback selects CSR read data
     assign CSRSrcD = (InstrD[6:0] == 7'b1110011);
 
     // ----------------------------------------------------------------
@@ -82,10 +85,12 @@ module ieu (
     logic [31:0] RD1E, RD2E, PCE, PCPlus4E, ImmExtE;
     logic        RegWriteE, ALUResultSrcE, MemWriteE;
     logic        BranchE, JumpE, MemEnE, LuiE, CSRSrcE_r;
-    logic [1:0]  ALUSrcE, ALUControlE;
+    logic [1:0]  ALUSrcE;
+    logic [2:0]  ALUControlE;
     logic [2:0]  Funct3E;
     logic        Funct7b5E;
     logic [11:0] CSRAdrE;
+    logic [6:0]  OpE;               // opcode in EX stage — used by csrfile HPM events
 
     always_ff @(posedge clk or posedge reset)
         if (reset || FlushE) begin
@@ -99,7 +104,7 @@ module ieu (
             MemEnE        <= '0;  LuiE         <= '0;
             CSRSrcE_r     <= '0;
             Funct3E       <= '0;  Funct7b5E    <= '0;
-            CSRAdrE       <= '0;
+            CSRAdrE       <= '0;  OpE          <= '0;
         end else begin
             RD1E          <= RD1D;       RD2E     <= RD2D;
             PCE           <= PCD;        PCPlus4E <= PCPlus4D;
@@ -121,23 +126,30 @@ module ieu (
             Funct3E       <= InstrD[14:12];
             Funct7b5E     <= InstrD[30];
             CSRAdrE       <= InstrD[31:20];
+            OpE           <= InstrD[6:0];
         end
 
     // ----------------------------------------------------------------
     // EXECUTE STAGE
     // ----------------------------------------------------------------
     logic [31:0] FSrcAE, FSrcBE;   // forwarded source values
-    logic [31:0] SrcAE, SrcBE;    // final ALU inputs
+    logic [31:0] SrcAE, SrcBE;     // final ALU inputs
     logic [31:0] ALUResultE;
     logic        BranchOpE;
     logic [31:0] IEUResultE;
     logic [31:0] CSRReadDataE;
 
-    // CSR file — reads cycle counter combinationally in EX stage
+    // CSR file — reads counters combinationally in EX stage
+    // HPM events driven by EX-stage instruction classification
     csrfile csr (
         .clk, .reset,
-        .csradr     (CSRAdrE),
-        .csrreaddata(CSRReadDataE)
+        .csradr      (CSRAdrE),
+        .op          (OpE),
+        .funct3      (Funct3E),
+        .funct7b5    (Funct7b5E),
+        .branchop    (BranchOpE),   // branch condition result from cmp unit
+        .csrreaddata (CSRReadDataE),
+        .TimeCounter (TimeCounter)
     );
 
     // Forwarding muxes: 00=regfile, 01=WB result, 10=MEM result (highest priority)
@@ -164,9 +176,9 @@ module ieu (
 
     // Branch comparator uses pre-mux register values (not PC/Imm-muxed)
     cmp cmp_inst (
-        .a      (FSrcAE),
-        .b      (FSrcBE),
-        .funct3 (Funct3E),
+        .a       (FSrcAE),
+        .b       (FSrcBE),
+        .funct3  (Funct3E),
         .branchop(BranchOpE)
     );
 

@@ -1,9 +1,9 @@
 // alu.sv
-// 32-bit ALU — supports all RV32I arithmetic and logic operations
+// 32-bit ALU — supports all RV32I arithmetic/logic operations + Zmmul multiply
 
 module alu (
     input  logic [31:0] srca, srcb,
-    input  logic [1:0]  alucontrol,   // {sub, aluop}
+    input  logic [2:0]  alucontrol,   // 000=force add, 001=I-type, 010=Zmmul, 011=R-type
     input  logic [2:0]  funct3,
     input  logic        funct7b5,     // instr[30]: distinguishes SUB/SRA from ADD/SRL
     input  logic        lui,          // pass srcb straight through (LUI)
@@ -14,26 +14,43 @@ module alu (
     logic        overflow, neg, lt;
     logic [2:0]  alufunct;
 
-    assign {sub, aluop} = alucontrol;
+    // Zmmul 64-bit products
+    logic [63:0] MulUU;
+    logic signed [63:0] MulSS, MulSU;
+    assign MulUU = {32'b0, srca} * {32'b0, srcb};
+    assign MulSS = $signed({{32{srca[31]}}, srca}) * $signed({{32{srcb[31]}}, srcb});
+    assign MulSU = $signed({{32{srca[31]}}, srca}) * $signed({32'b0, srcb});
 
+    // SUB only in R-type mode (011) when funct7b5 is set and funct3==000
+    assign sub      = (alucontrol == 3'b011) & (funct3 == 3'b000) & funct7b5;
+    // aluop=1 when using funct3 (I-type=001 or R-type=011), i.e. alucontrol[0]
+    assign aluop    = alucontrol[0];
     // SLT/SLTI also need a subtraction to evaluate signed less-than
     assign forcesub = sub | (aluop & (funct3 == 3'b010));
     assign condinvb = forcesub ? ~srcb : srcb;
     assign sum      = srca + condinvb + {31'b0, forcesub};
 
-    // Signed comparison via overflow-corrected sign bit of difference
     assign overflow = (srca[31] ^ srcb[31]) & (srca[31] ^ sum[31]);
     assign neg      = sum[31];
     assign lt       = neg ^ overflow;
     assign slt      = {31'b0, lt};
     assign sltu     = {31'b0, srca < srcb};
 
-    // Mask funct3 to zero when aluop=0 (non-R/I ops), forcing the add path
+    // Mask funct3 to zero when aluop=0 (force-add path)
     assign alufunct = funct3 & {3{aluop}};
 
     always_comb
         if (lui)
             aluresult = srcb;                               // LUI: pass immediate
+        else if (alucontrol == 3'b010)
+            // Zmmul
+            case (funct3)
+                3'b000: aluresult = MulSS[31:0];            // mul
+                3'b001: aluresult = MulSS[63:32];           // mulh
+                3'b010: aluresult = MulSU[63:32];           // mulhsu
+                3'b011: aluresult = MulUU[63:32];           // mulhu
+                default: aluresult = 32'bx;
+            endcase
         else
             case (alufunct)
                 3'b000: aluresult = sum;                    // ADD / SUB
