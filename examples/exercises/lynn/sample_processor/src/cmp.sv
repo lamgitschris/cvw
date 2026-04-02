@@ -1,15 +1,14 @@
 // cmp.sv
-// Branch comparator — evaluates all RV32I branch conditions combinationally
-// kacassidy@hmc.edu 2025
+// Branch comparator — evaluates all RV32I branch conditions
 
 module cmp (
     input  logic [31:0] a, b,
     input  logic [2:0]  funct3,
-    output logic        branchop
+    output logic        branchop    // 1 if branch condition is satisfied
 );
     logic lt, ltu;
-    assign lt  = ($signed(a) < $signed(b));
-    assign ltu = (a < b);
+    assign lt  = $signed(a) < $signed(b);
+    assign ltu = a < b;
 
     always_comb
         case (funct3)

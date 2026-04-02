@@ -1,6 +1,5 @@
 // mux.sv
 // Parameterized 2:1 and 3:1 multiplexers
-// kacassidy@hmc.edu 2025
 
 module mux2 #(parameter WIDTH = 32) (
     input  logic [WIDTH-1:0] a, b,
