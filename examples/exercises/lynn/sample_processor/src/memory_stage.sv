@@ -1,104 +1,96 @@
 // memory_stage.sv
-// Memory stage — data memory interface, store byte-enable/replication,
-//                load data alignment, and MEM/WB pipeline register
+// Memory stage — data memory interface, store masking, load alignment, MEM/WB register
 // kacassidy@hmc.edu 2025
 
 module memory_stage (
     input  logic        clk, reset,
-    // From EX/MEM pipeline register
-    input  logic [31:0] ALUResultM,    // memory address (or ALU/link result)
-    input  logic [31:0] WriteDataM,    // store data (raw R2 value from EX)
-    input  logic [4:0]  RdM,
-    input  logic        RegWriteM,
-    input  logic        MemWriteM,
-    input  logic        ResultSrcM,    // 1 = load instruction
-    input  logic        MemEnM,
-    input  logic        CSRSrcM,
-    input  logic [2:0]  Funct3M,
-    input  logic [31:0] PCPlus4M,
-    input  logic [31:0] CSRReadDataM,
+    // From EX/MEM register
+    input  logic [31:0] aluresultm,   // memory address or result to write back
+    input  logic [31:0] writedatam,   // raw rs2 value for stores
+    input  logic [4:0]  rdm,
+    input  logic        regwritem,
+    input  logic        memwritem, resultsrcm, menenem,
+    input  logic        csrsrcm,
+    input  logic [2:0]  funct3m,
+    input  logic [31:0] csrreaddatam,
     // Data memory interface
-    input  logic [31:0] ReadData,      // from data memory
-    output logic [31:0] DataAdr,       // to data memory
-    output logic [31:0] WriteData,     // byte-replicated store data
-    output logic        MemEn,
-    output logic        WriteEn,
-    output logic [3:0]  WriteByteEn,
+    input  logic [31:0] readdata,
+    output logic [31:0] dataadr,
+    output logic [31:0] writedata,
+    output logic        memen,
+    output logic        writeen,
+    output logic [3:0]  writebyteen,
 
-    // MEM/WB pipeline register outputs
-    output logic [31:0] ALUResultW,
-    output logic [31:0] ReadDataW,     // aligned load data
-    output logic [4:0]  RdW,
-    output logic        RegWriteW,
-    output logic        ResultSrcW,
-    output logic        CSRSrcW,
-    output logic [31:0] PCPlus4W,
-    output logic [31:0] CSRReadDataW,
+    // MEM/WB register outputs
+    output logic [31:0] aluresultw,
+    output logic [31:0] readdataw,
+    output logic [4:0]  rdw,
+    output logic        regwritew,
+    output logic        resultsrcw, csrsrcw,
+    output logic [31:0] csrreaddataw,
 
-    // Forwarding output — ALU result available to EX stage this cycle
-    output logic [31:0] ResultM
+    // Forward to EX stage (ALU result available immediately)
+    output logic [31:0] resultm
 );
-    assign DataAdr = ALUResultM;
-    assign MemEn   = MemEnM;
-    assign ResultM = ALUResultM;  // forward ALU/link result (load data not yet available)
+    assign dataadr = aluresultm;
+    assign memen   = menenem;
+    assign resultm = aluresultm; // load data not yet available; forward ALU result
 
-    // ---- Store byte-enable and write-data replication ----
+    // Store byte-enable and write-data replication
     always_comb begin
-        if (MemWriteM) begin
-            case (Funct3M[1:0])
-                2'b00: begin  // SB — replicate byte to all lanes; byte-enable selects correct lane
-                    WriteByteEn = 4'b0001 << ALUResultM[1:0];
-                    WriteData   = {4{WriteDataM[7:0]}};
+        if (memwritem)
+            case (funct3m[1:0])
+                2'b00: begin  // SB
+                    writebyteen = 4'b0001 << aluresultm[1:0];
+                    writedata   = {4{writedatam[7:0]}};
                 end
-                2'b01: begin  // SH — replicate halfword; byte-enable selects upper or lower half
-                    WriteByteEn = ALUResultM[1] ? 4'b1100 : 4'b0011;
-                    WriteData   = {2{WriteDataM[15:0]}};
+                2'b01: begin  // SH
+                    writebyteen = aluresultm[1] ? 4'b1100 : 4'b0011;
+                    writedata   = {2{writedatam[15:0]}};
                 end
                 default: begin  // SW
-                    WriteByteEn = 4'b1111;
-                    WriteData   = WriteDataM;
+                    writebyteen = 4'b1111;
+                    writedata   = writedatam;
                 end
             endcase
-        end else begin
-            WriteByteEn = 4'b0000;
-            WriteData   = WriteDataM;
+        else begin
+            writebyteen = 4'b0000;
+            writedata   = writedatam;
         end
     end
-    assign WriteEn = |WriteByteEn;
+    assign writeen = |writebyteen;
 
-    // ---- Load data alignment ----
-    // Shift the correct byte/halfword to bits [7:0] or [15:0] then sign/zero-extend
-    logic [7:0]  ByteVal;
-    logic [15:0] HalfVal;
-    logic [31:0] SelectedData;
+    // Load data alignment
+    logic [7:0]  byteval;
+    logic [15:0] halfval;
+    logic [31:0] selecteddata;
 
-    assign ByteVal = 8'(ReadData >> (ALUResultM[1:0] * 8));
-    assign HalfVal = 16'(ReadData >> (ALUResultM[1]  * 16));
+    assign byteval = 8'(readdata  >> (aluresultm[1:0] * 8));
+    assign halfval = 16'(readdata >> (aluresultm[1]   * 16));
 
     always_comb
-        case (Funct3M)
-            3'b000: SelectedData = {{24{ByteVal[7]}}, ByteVal};   // LB  (sign-extend)
-            3'b001: SelectedData = {{16{HalfVal[15]}}, HalfVal};  // LH  (sign-extend)
-            3'b100: SelectedData = {24'b0, ByteVal};              // LBU (zero-extend)
-            3'b101: SelectedData = {16'b0, HalfVal};              // LHU (zero-extend)
-            default: SelectedData = ReadData;                     // LW
+        case (funct3m)
+            3'b000: selecteddata = {{24{byteval[7]}},  byteval};   // LB
+            3'b001: selecteddata = {{16{halfval[15]}}, halfval};   // LH
+            3'b100: selecteddata = {24'b0, byteval};               // LBU
+            3'b101: selecteddata = {16'b0, halfval};               // LHU
+            default: selecteddata = readdata;                      // LW
         endcase
 
-    // ---- MEM/WB pipeline register ----
+    // MEM/WB pipeline register
     always_ff @(posedge clk or posedge reset) begin
         if (reset) begin
-            ALUResultW   <= 32'b0;  ReadDataW    <= 32'b0;  RdW          <= 5'b0;
-            RegWriteW    <= 1'b0;   ResultSrcW   <= 1'b0;   CSRSrcW      <= 1'b0;
-            PCPlus4W     <= 32'b0;  CSRReadDataW <= 32'b0;
+            aluresultw   <= 32'b0;  readdataw    <= 32'b0;  rdw   <= 5'b0;
+            regwritew    <= 1'b0;   resultsrcw   <= 1'b0;   csrsrcw <= 1'b0;
+            csrreaddataw <= 32'b0;
         end else begin
-            ALUResultW   <= ALUResultM;
-            ReadDataW    <= SelectedData;
-            RdW          <= RdM;
-            RegWriteW    <= RegWriteM;
-            ResultSrcW   <= ResultSrcM;
-            CSRSrcW      <= CSRSrcM;
-            PCPlus4W     <= PCPlus4M;
-            CSRReadDataW <= CSRReadDataM;
+            aluresultw   <= aluresultm;
+            readdataw    <= selecteddata;
+            rdw          <= rdm;
+            regwritew    <= regwritem;
+            resultsrcw   <= resultsrcm;
+            csrsrcw      <= csrsrcm;
+            csrreaddataw <= csrreaddatam;
         end
     end
 endmodule

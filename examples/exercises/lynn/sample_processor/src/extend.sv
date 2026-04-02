@@ -3,17 +3,17 @@
 // kacassidy@hmc.edu 2025
 
 module extend (
-    input  logic [31:7] Instr,
-    input  logic [2:0]  ImmSrc,
-    output logic [31:0] ImmExt
+    input  logic [31:7] instr,
+    input  logic [2:0]  immsrc,
+    output logic [31:0] immext
 );
     always_comb
-        case (ImmSrc)
-            3'b000: ImmExt = {{20{Instr[31]}}, Instr[31:20]};                               // I-type
-            3'b001: ImmExt = {{20{Instr[31]}}, Instr[31:25], Instr[11:7]};                  // S-type
-            3'b010: ImmExt = {{20{Instr[31]}}, Instr[7], Instr[30:25], Instr[11:8], 1'b0};  // B-type
-            3'b011: ImmExt = {{12{Instr[31]}}, Instr[19:12], Instr[20], Instr[30:21], 1'b0}; // J-type
-            3'b100: ImmExt = {Instr[31:12], 12'b0};                                          // U-type
-            default: ImmExt = 32'bx;
+        case (immsrc)
+            3'b000: immext = {{20{instr[31]}}, instr[31:20]};                                // I-type
+            3'b001: immext = {{20{instr[31]}}, instr[31:25], instr[11:7]};                   // S-type
+            3'b010: immext = {{20{instr[31]}}, instr[7], instr[30:25], instr[11:8], 1'b0};   // B-type
+            3'b011: immext = {{12{instr[31]}}, instr[19:12], instr[20], instr[30:21], 1'b0}; // J-type
+            3'b100: immext = {instr[31:12], 12'b0};                                          // U-type
+            default: immext = 32'bx;
         endcase
 endmodule

@@ -2,186 +2,142 @@
 // Top-level 5-stage pipelined RISC-V processor
 // kacassidy@hmc.edu 2025
 //
-// Instantiates and wires together all pipeline stages and support units:
-//   ifu           — Fetch stage + IF/ID register
-//   decode_stage  — Decode stage + ID/EX register
-//   execute_stage — Execute stage + EX/MEM register
-//   memory_stage  — Memory stage + MEM/WB register
-//   writeback_stage — Writeback stage (combinational mux only)
-//   csrfile       — Performance counters (cycle, instret, hpm3-10)
-//   hazard        — Forwarding, load-use stall, branch/jump flush
+// Stages: Fetch (F) → Decode (D) → Execute (E) → Memory (M) → Writeback (W)
+// Hazard handling: full forwarding, load-use stall, branch/jump flush (resolved in EX)
 
 `include "parameters.svh"
 
 module riscvpipe (
-    input  logic        clk,
-    input  logic        reset,
-
-    output logic [31:0] PC,           // instruction memory address
-    input  logic [31:0] Instr,        // instruction memory read data
-
-    output logic [31:0] IEUAdr,       // data memory address
-    input  logic [31:0] ReadData,     // data memory read data
-    output logic [31:0] WriteData,    // data memory write data
-
+    input  logic        clk, reset,
+    output logic [31:0] PC,          // instruction memory address
+    input  logic [31:0] Instr,       // instruction memory read data
+    output logic [31:0] IEUAdr,      // data memory address
+    input  logic [31:0] ReadData,    // data memory read data
+    output logic [31:0] WriteData,   // data memory write data
     output logic        MemEn,
     output logic        WriteEn,
     output logic [3:0]  WriteByteEn
 );
-
-    // ----------------------------------------------------------------
     // IF/ID wires
-    // ----------------------------------------------------------------
-    logic [31:0] PCPlus4F;
-    logic [31:0] InstrD, PCD, PCPlus4D;
+    logic [31:0] instrd, pcd, pcplus4d;
 
-    // ----------------------------------------------------------------
-    // ID/EX wires
-    // ----------------------------------------------------------------
-    logic [31:0] RD1E, RD2E, PCE, PCPlus4E, ImmExtE;
-    logic [4:0]  Rs1E, Rs2E, RdE;
-    logic        RegWriteE;
-    logic [1:0]  ALUSrcE;
-    logic        ALUOpE;
-    logic [1:0]  ALUControlE;
-    logic        ALUResultSrcE;
-    logic        MemWriteE, ResultSrcE, BranchE, JumpE, MemEnE;
-    logic        LUIE, CSRSrcE;
-    logic [2:0]  Funct3E;
-    logic        Funct7b5E;
-    logic [6:0]  Funct7E;
-    logic [11:0] CSRAdrE;
-    logic [6:0]  OpE;
+    // ID/EX wires — data
+    logic [31:0] rd1e, rd2e, pce, pcplus4e, immexte;
+    logic [4:0]  rs1e, rs2e, rde;
+    // ID/EX wires — control
+    logic        regwritee, aluresultsrce, memwritee, resultsrce;
+    logic        branche, jumpe, memene, luie, csrsrce;
+    logic [1:0]  alusrce, alucontrole;
+    logic [2:0]  funct3e;
+    logic        funct7b5e;
+    logic [11:0] csradre;
 
-    // ----------------------------------------------------------------
     // EX/MEM wires
-    // ----------------------------------------------------------------
-    logic [31:0] ALUResultM_w, WriteDataM;
-    logic [4:0]  RdM;
-    logic        RegWriteM;
-    logic        MemWriteM, ResultSrcM, MemEnM;
-    logic        CSRSrcM;
-    logic [2:0]  Funct3M;
-    logic [31:0] PCPlus4M;
-    logic [31:0] CSRReadDataM;
-    logic [31:0] ResultM;
+    logic [31:0] aluresultm_w, writedatam;
+    logic [4:0]  rdm;
+    logic        regwritem, memwritem, resultsrcm, menenem, csrsrcm;
+    logic [2:0]  funct3m;
+    logic [31:0] csrreaddatam, resultm;
 
-    // ----------------------------------------------------------------
     // MEM/WB wires
-    // ----------------------------------------------------------------
-    logic [31:0] ALUResultW, ReadDataW;
-    logic [4:0]  RdW;
-    logic        RegWriteW;
-    logic        ResultSrcW, CSRSrcW;
-    logic [31:0] PCPlus4W, CSRReadDataW;
-    logic [31:0] ResultW;
+    logic [31:0] aluresultw, readdataw, csrreaddataw;
+    logic [4:0]  rdw;
+    logic        regwritew, resultsrcw, csrsrcw;
+    logic [31:0] resultw;
 
-    // ----------------------------------------------------------------
-    // Hazard / control wires
-    // ----------------------------------------------------------------
-    logic        StallF, StallD, FlushD, FlushE;
-    logic        PCSrcE;
-    logic [31:0] PCTargetE;
-    logic [1:0]  ForwardAE, ForwardBE;
+    // Hazard/control wires
+    logic        stallf, stalld, flushd, flushe, pcsrce;
+    logic [31:0] pctargete;
+    logic [1:0]  forwardae, forwardbe;
 
-    // ----------------------------------------------------------------
-    // CSR read data (combinational; driven by EX-stage address)
-    // BranchOp tied to 0: branch outcome not known until EX, so
-    // branch-taken counts are approximate — acceptable for profiling.
-    // ----------------------------------------------------------------
-    logic [31:0] CSRReadDataE;
-
+    // CSR — reads cycle counter combinationally in EX stage
+    logic [31:0] csrreaddatae;
     csrfile csr (
-        .clk,  .reset,
-        .CSRAdr  (CSRAdrE),
-        .Op      (OpE),
-        .Funct3  (Funct3E),
-        .Funct7b5(Funct7b5E),
-        .BranchOp(1'b0),
-        .CSRReadData(CSRReadDataE)
+        .clk, .reset,
+        .csradr(csradre),
+        .csrreaddata(csrreaddatae)
     );
 
-    // ----------------------------------------------------------------
     // Hazard unit
-    // ----------------------------------------------------------------
     hazard hu (
-        .Rs1E,  .Rs2E,
-        .RdM,   .RdW,
-        .RegWriteM,  .RegWriteW,
-        .ResultSrcM,
-        .Rs1D(InstrD[19:15]),  .Rs2D(InstrD[24:20]),
-        .RdE,
-        .PCSrcE,
-        .ForwardAE,  .ForwardBE,
-        .StallF,  .StallD,
-        .FlushD,  .FlushE
+        .rs1e, .rs2e,
+        .rdm,  .rdw,
+        .regwritem, .regwritew,
+        .resultsrce,
+        .rs1d(instrd[19:15]), .rs2d(instrd[24:20]),
+        .rde,
+        .pcsrce,
+        .forwardae, .forwardbe,
+        .stallf, .stalld,
+        .flushd, .flushe
     );
 
-    // ----------------------------------------------------------------
-    // Pipeline stages
-    // ----------------------------------------------------------------
+    // Fetch stage
     ifu fetch (
-        .clk,  .reset,
-        .StallF,  .StallD,  .FlushD,
-        .PCSrcE,  .PCTargetE,
-        .InstrF  (Instr),
-        .PC,
-        .PCPlus4F,
-        .InstrD,  .PCD,  .PCPlus4D
+        .clk, .reset,
+        .stallf, .stalld, .flushd,
+        .pcsrce, .pctargete,
+        .instrf(Instr),
+        .pc(PC),
+        .instrd, .pcd, .pcplus4d
     );
 
+    // Decode stage
     decode_stage id_stage (
-        .clk,  .reset,
-        .FlushE,
-        .InstrD,  .PCD,  .PCPlus4D,
-        .RegWriteW,  .RdW,  .ResultW,
-        .RD1E,  .RD2E,  .PCE,  .PCPlus4E,  .ImmExtE,
-        .Rs1E,  .Rs2E,  .RdE,
-        .RegWriteE,  .ALUSrcE,  .ALUOpE,  .ALUControlE,
-        .ALUResultSrcE,  .MemWriteE,  .ResultSrcE,
-        .BranchE,  .JumpE,  .MemEnE,
-        .LUIE,  .CSRSrcE,
-        .Funct3E,  .Funct7b5E,  .Funct7E,  .CSRAdrE,  .OpE
+        .clk, .reset,
+        .flushe,
+        .instrd, .pcd, .pcplus4d,
+        .regwritew, .rdw, .resultw,
+        .rd1e, .rd2e, .pce, .pcplus4e, .immexte,
+        .rs1e, .rs2e, .rde,
+        .regwritee, .alusrce, .alucontrole,
+        .aluresultsrce, .memwritee, .resultsrce,
+        .branche, .jumpe, .memene,
+        .luie, .csrsrce,
+        .funct3e, .funct7b5e, .csradre
     );
 
+    // Execute stage
     execute_stage ex_stage (
-        .clk,  .reset,
-        .ResultM,  .ResultW,
-        .RD1E,  .RD2E,  .PCE,  .PCPlus4E,  .ImmExtE,
-        .RdE,
-        .RegWriteE,  .ALUSrcE,  .ALUControlE,
-        .ALUResultSrcE,  .MemWriteE,  .ResultSrcE,
-        .BranchE,  .JumpE,  .MemEnE,
-        .LUIE,  .CSRSrcE,
-        .Funct3E,  .Funct7b5E,  .Funct7E,  .CSRAdrE,  .OpE,
-        .ForwardAE,  .ForwardBE,
-        .CSRReadDataE,
-        .PCSrcE,  .PCTargetE,
-        .ALUResultM(ALUResultM_w),
-        .WriteDataM,  .RdM,
-        .RegWriteM,  .MemWriteM,  .ResultSrcM,  .MemEnM,
-        .CSRSrcM,  .Funct3M,  .PCPlus4M,  .CSRReadDataM
+        .clk, .reset,
+        .resultm, .resultw,
+        .rd1e, .rd2e, .pce, .pcplus4e, .immexte,
+        .rde,
+        .regwritee, .alusrce, .alucontrole,
+        .aluresultsrce, .memwritee, .resultsrce,
+        .branche, .jumpe, .memene,
+        .luie, .csrsrce,
+        .funct3e, .funct7b5e, .csradre,
+        .forwardae, .forwardbe,
+        .csrreaddatae,
+        .pcsrce, .pctargete,
+        .aluresultm(aluresultm_w),
+        .writedatam, .rdm,
+        .regwritem, .memwritem, .resultsrcm, .menenem,
+        .csrsrcm, .funct3m, .csrreaddatam
     );
 
+    // Memory stage
     memory_stage mem_stage (
-        .clk,  .reset,
-        .ALUResultM(ALUResultM_w),
-        .WriteDataM,  .RdM,
-        .RegWriteM,  .MemWriteM,  .ResultSrcM,  .MemEnM,
-        .CSRSrcM,  .Funct3M,  .PCPlus4M,  .CSRReadDataM,
-        .ReadData,
-        .DataAdr    (IEUAdr),
-        .WriteData,  .MemEn,  .WriteEn,  .WriteByteEn,
-        .ALUResultW,  .ReadDataW,  .RdW,
-        .RegWriteW,  .ResultSrcW,  .CSRSrcW,
-        .PCPlus4W,  .CSRReadDataW,
-        .ResultM
+        .clk, .reset,
+        .aluresultm(aluresultm_w),
+        .writedatam, .rdm,
+        .regwritem, .memwritem, .resultsrcm, .menenem,
+        .csrsrcm, .funct3m, .csrreaddatam,
+        .readdata(ReadData),
+        .dataadr(IEUAdr),
+        .writedata(WriteData),
+        .memen(MemEn), .writeen(WriteEn), .writebyteen(WriteByteEn),
+        .aluresultw, .readdataw, .rdw,
+        .regwritew, .resultsrcw, .csrsrcw,
+        .csrreaddataw, .resultm
     );
 
+    // Writeback stage
     writeback_stage wb_stage (
-        .ALUResultW,  .ReadDataW,
-        .ResultSrcW,  .CSRSrcW,  .CSRReadDataW,
-        .ResultW
+        .aluresultw, .readdataw,
+        .resultsrcw, .csrsrcw, .csrreaddataw,
+        .resultw
     );
 
 endmodule

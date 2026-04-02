@@ -3,8 +3,8 @@
 // kacassidy@hmc.edu 2025
 
 module adder (
-    input  logic [31:0] inputA, inputB,
-    output logic [31:0] result
+    input  logic [31:0] a, b,
+    output logic [31:0] y
 );
-    assign result = inputA + inputB;
+    assign y = a + b;
 endmodule

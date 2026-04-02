@@ -1,116 +1,107 @@
 // execute_stage.sv
-// Execute stage — ALU, forwarding muxes, branch resolution, EX/MEM pipeline register
+// Execute stage — forwarding, ALU, branch resolution, EX/MEM pipeline register
 // kacassidy@hmc.edu 2025
 //
-// Branch/jump resolution happens here (EX stage).
-// PCSrcE goes high when a branch is taken or any jump is encountered.
-// PCTargetE selects PC+imm for branches/JAL, or the ALU result (rs1+imm) for JALR.
+// Branch/jump resolved here:
+//   pcsrce = 1 on taken branch or any jump
+//   pctargete = PC+imm (branch/JAL) or rs1+imm (JALR)
 
 module execute_stage (
     input  logic        clk, reset,
-    // Forwarded values from MEM and WB stages
-    input  logic [31:0] ResultM, ResultW,
-    // From ID/EX pipeline register — data
-    input  logic [31:0] RD1E, RD2E, PCE, PCPlus4E, ImmExtE,
-    input  logic [4:0]  RdE,
-    // From ID/EX pipeline register — control
-    input  logic        RegWriteE,
-    input  logic [1:0]  ALUSrcE,
-    input  logic [1:0]  ALUControlE,
-    input  logic        ALUResultSrcE,
-    input  logic        MemWriteE, ResultSrcE,
-    input  logic        BranchE, JumpE, MemEnE,
-    input  logic        LUIE, CSRSrcE,
-    input  logic [2:0]  Funct3E,
-    input  logic        Funct7b5E,
-    input  logic [6:0]  Funct7E,
-    input  logic [11:0] CSRAdrE,
-    input  logic [6:0]  OpE,
+    // Forwarded values from MEM and WB
+    input  logic [31:0] resultm, resultw,
+    // From ID/EX register — data
+    input  logic [31:0] rd1e, rd2e, pce, pcplus4e, immexte,
+    input  logic [4:0]  rde,
+    // From ID/EX register — control
+    input  logic        regwritee,
+    input  logic [1:0]  alusrce,
+    input  logic [1:0]  alucontrole,
+    input  logic        aluresultsrce,
+    input  logic        memwritee, resultsrce,
+    input  logic        branche, jumpe, memene,
+    input  logic        luie, csrsrce,
+    input  logic [2:0]  funct3e,
+    input  logic        funct7b5e,
+    input  logic [11:0] csradre,
     // Forwarding selects from hazard unit
-    input  logic [1:0]  ForwardAE, ForwardBE,
-    // CSR read data (combinational from csrfile)
-    input  logic [31:0] CSRReadDataE,
+    input  logic [1:0]  forwardae, forwardbe,
+    // CSR read data (combinational)
+    input  logic [31:0] csrreaddatae,
 
-    // To hazard unit and IFU
-    output logic        PCSrcE,
-    output logic [31:0] PCTargetE,
+    // To IFU and hazard unit
+    output logic        pcsrce,
+    output logic [31:0] pctargete,
 
-    // EX/MEM pipeline register outputs
-    output logic [31:0] ALUResultM,
-    output logic [31:0] WriteDataM,
-    output logic [4:0]  RdM,
-    output logic        RegWriteM,
-    output logic        MemWriteM, ResultSrcM, MemEnM,
-    output logic        CSRSrcM,
-    output logic [2:0]  Funct3M,
-    output logic [31:0] PCPlus4M,
-    output logic [31:0] CSRReadDataM
+    // EX/MEM register outputs
+    output logic [31:0] aluresultm,
+    output logic [31:0] writedatam,
+    output logic [4:0]  rdm,
+    output logic        regwritem,
+    output logic        memwritem, resultsrcm, menenem,
+    output logic        csrsrcm,
+    output logic [2:0]  funct3m,
+    output logic [31:0] csrreaddatam
 );
-    // ---- Forwarding muxes ----
-    // SrcAE_pre / SrcBE_pre: forwarded register values before the ALU source mux
-    logic [31:0] SrcAE_pre, SrcBE_pre;
-    mux3 #(32) fwdAmux(RD1E, ResultW, ResultM, ForwardAE, SrcAE_pre);
-    mux3 #(32) fwdBmux(RD2E, ResultW, ResultM, ForwardBE, SrcBE_pre);
+    // Forwarding muxes — select final register values before ALU source mux
+    logic [31:0] srca_pre, srcb_pre;
+    mux3 #(32) fwda (rd1e, resultw, resultm, forwardae, srca_pre);
+    mux3 #(32) fwdb (rd2e, resultw, resultm, forwardbe, srcb_pre);
 
-    // ---- ALU source muxes ----
-    // SrcA: register value  OR  PC (for auipc/jal)
-    // SrcB: register value  OR  immediate
-    logic [31:0] SrcAE, SrcBE;
-    mux2 #(32) srcamux(SrcAE_pre, PCE,    ALUSrcE[1], SrcAE);
-    mux2 #(32) srcbmux(SrcBE_pre, ImmExtE, ALUSrcE[0], SrcBE);
+    // ALU source muxes
+    // SrcA: register or PC (AUIPC/JAL/branches)
+    // SrcB: register or immediate
+    logic [31:0] srca, srcb;
+    mux2 #(32) srcamux (srca_pre, pce,      alusrce[1], srca);
+    mux2 #(32) srcbmux (srcb_pre, immexte,  alusrce[0], srcb);
 
-    // ---- ALU ----
-    logic [31:0] ALUResultE, IEUAdrE;
-    alu alu_inst(
-        .SrcA(SrcAE), .SrcB(SrcBE),
-        .ALUControl(ALUControlE),
-        .Funct3(Funct3E), .Funct7b5(Funct7b5E), .Funct7(Funct7E),
-        .LUI(LUIE),
-        .ALUResult(ALUResultE), .IEUAdr(IEUAdrE)
+    // ALU
+    logic [31:0] aluresulte;
+    alu alu_inst (
+        .srca, .srcb,
+        .alucontrol(alucontrole),
+        .funct3(funct3e), .funct7b5(funct7b5e),
+        .lui(luie),
+        .aluresult(aluresulte)
     );
 
-    // ---- Branch comparator ----
-    // Uses pre-mux register values (not the PC-muxed SrcA)
-    logic BranchOpE;
-    cmp cmp_inst(.R1(SrcAE_pre), .R2(SrcBE_pre), .Funct3(Funct3E), .BranchOp(BranchOpE));
+    // Branch comparator — uses pre-mux register values
+    logic branchope;
+    cmp cmp_inst (.a(srca_pre), .b(srcb_pre), .funct3(funct3e), .branchop(branchope));
 
-    // ---- Link / result mux ----
-    // JAL/JALR write PC+4 as the link value; all other instructions write the ALU result
-    logic [31:0] IEUResultE;
-    mux2 #(32) linkresultmux(ALUResultE, PCPlus4E, ALUResultSrcE, IEUResultE);
+    // Result mux — JAL/JALR write PC+4 as link value; others write ALU result
+    logic [31:0] ieure;
+    mux2 #(32) linkresultmux (aluresulte, pcplus4e, aluresultsrce, ieure);
 
-    // ---- Branch/jump target ----
-    // Branches and JAL: PC + sign-extended immediate
-    // JALR:             rs1 + imm  (= ALU result)
-    logic [31:0] PCBranchE;
-    adder branchadd(PCE, ImmExtE, PCBranchE);
-    mux2 #(32) pctargetmux(
-        PCBranchE, ALUResultE,
-        JumpE & (OpE == 7'b1100111),  // select ALU result only for JALR
-        PCTargetE
-    );
+    // Branch/jump target
+    // Branches + JAL: PC + sign-extended immediate
+    // JALR:           rs1 + imm = ALU result
+    logic [31:0] pcbranche;
+    adder      branchadd  (pce, immexte, pcbranche);
+    mux2 #(32) pctargetmux (pcbranche, aluresulte,
+                             jumpe & ~alusrce[1], // JALR: jump with register base (alusrce[1]=0)
+                             pctargete);
 
-    assign PCSrcE = (BranchE & BranchOpE) | JumpE;
+    assign pcsrce = (branche & branchope) | jumpe;
 
-    // ---- EX/MEM pipeline register ----
+    // EX/MEM pipeline register
     always_ff @(posedge clk or posedge reset) begin
         if (reset) begin
-            ALUResultM   <= 32'b0;  WriteDataM   <= 32'b0;  RdM          <= 5'b0;
-            RegWriteM    <= 1'b0;   MemWriteM    <= 1'b0;   ResultSrcM   <= 1'b0;
-            MemEnM       <= 1'b0;   CSRSrcM      <= 1'b0;
-            Funct3M      <= 3'b0;   PCPlus4M     <= 32'b0;  CSRReadDataM <= 32'b0;
+            aluresultm   <= 32'b0;  writedatam   <= 32'b0;  rdm    <= 5'b0;
+            regwritem    <= 1'b0;   memwritem    <= 1'b0;   resultsrcm <= 1'b0;
+            menenem      <= 1'b0;   csrsrcm      <= 1'b0;
+            funct3m      <= 3'b0;   csrreaddatam <= 32'b0;
         end else begin
-            ALUResultM   <= IEUResultE;  // link value (PC+4) or ALU result
-            WriteDataM   <= SrcBE_pre;  // raw R2 value for stores (not immediate-muxed)
-            RdM          <= RdE;
-            RegWriteM    <= RegWriteE;
-            MemWriteM    <= MemWriteE;
-            ResultSrcM   <= ResultSrcE;
-            MemEnM       <= MemEnE;
-            CSRSrcM      <= CSRSrcE;
-            Funct3M      <= Funct3E;
-            PCPlus4M     <= PCPlus4E;
-            CSRReadDataM <= CSRReadDataE;
+            aluresultm   <= ieure;      // link value (PC+4) or ALU result
+            writedatam   <= srcb_pre;   // raw rs2 for stores (not immediate-muxed)
+            rdm          <= rde;
+            regwritem    <= regwritee;
+            memwritem    <= memwritee;
+            resultsrcm   <= resultsrce;
+            menenem      <= memene;
+            csrsrcm      <= csrsrce;
+            funct3m      <= funct3e;
+            csrreaddatam <= csrreaddatae;
         end
     end
 endmodule
