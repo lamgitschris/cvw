@@ -12,7 +12,7 @@ XLEN 				?= 32
 PROCESSOR_DIR   	?= $(CURDIR)/sample_processor/src      # Directory containing all PROCESSOR RTL (will scan for .sv / .svh)
 INC_DIR       		?= $(CURDIR)/sample_processor/incdir/  # Optional directory for include files for RTL compilation (parameters)
 
-PROCESSOR_TOP 		?= riscvsingle # top-level module name
+PROCESSOR_TOP 		?= riscvpipe # top-level module name
 PROCESSOR_CONFIG 	?= $(CURDIR)/sample_processor/config
 
 #--trace-all
@@ -54,6 +54,7 @@ COREMARK_DIR 	?= $(CURDIR)/coremark
 C_TEST_DIR		?= $(CURDIR)/tests/C
 ACT4_TEST_DIR	?= $(CURDIR)/tests/act4
 BRINGUP_TEST_DIR?= $(CURDIR)/tests/bringup
+BRINGUP_PIPELINE_TEST_DIR ?= $(CURDIR)/tests/bringup_pipeline
 TESTBENCH_DIR 	?= $(CURDIR)/tb
 SYNTH_DIR 		?= $(CURDIR)/synth
 
@@ -218,6 +219,14 @@ bringup_test:
 	@$(MAKE) -C $(BRINGUP_TEST_DIR) \
 		XLEN=$(XLEN) ARCH="$(ARCH)" ABI=$(ABI) TOOLPREFIX=$(TOOLPREFIX)
 	@$(MAKE) run ELFS="$(BRINGUP_TEST_DIR)/work/bringup.elf"
+
+# ----  Pipeline Bringup test flow  ---- #
+# after bringup_test target
+.PHONY: pipeline_test
+pipeline_test:
+	@$(MAKE) -C $(BRINGUP_PIPELINE_TEST_DIR) \
+		XLEN=$(XLEN) ARCH="$(ARCH)" ABI=$(ABI) TOOLPREFIX=$(TOOLPREFIX)
+	@$(MAKE) run ELFS="$(BRINGUP_PIPELINE_TEST_DIR)/work/bringup_pipeline.elf"
 
 # ----  Coremark flow  ---- #
 # (build moved into coremark/Makefile)
