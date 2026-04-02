@@ -88,7 +88,7 @@ module ieu (
     logic [1:0]  ALUSrcE;
     logic [2:0]  ALUControlE;
     logic [2:0]  Funct3E;
-    logic        Funct7b5E;
+    logic [6:0]  Funct7E;
     logic [11:0] CSRAdrE;
     logic [6:0]  OpE;               // opcode in EX stage — used by csrfile HPM events
 
@@ -103,7 +103,7 @@ module ieu (
             BranchE       <= '0;  JumpE        <= '0;
             MemEnE        <= '0;  LuiE         <= '0;
             CSRSrcE_r     <= '0;
-            Funct3E       <= '0;  Funct7b5E    <= '0;
+            Funct3E       <= '0;  Funct7E    <= '0;
             CSRAdrE       <= '0;  OpE          <= '0;
         end else begin
             RD1E          <= RD1D;       RD2E     <= RD2D;
@@ -124,7 +124,7 @@ module ieu (
             LuiE          <= LuiD;
             CSRSrcE_r     <= CSRSrcD;
             Funct3E       <= InstrD[14:12];
-            Funct7b5E     <= InstrD[30];
+            Funct7E       <= InstrD[31:25];
             CSRAdrE       <= InstrD[31:20];
             OpE           <= InstrD[6:0];
         end
@@ -146,7 +146,7 @@ module ieu (
         .csradr      (CSRAdrE),
         .op          (OpE),
         .funct3      (Funct3E),
-        .funct7b5    (Funct7b5E),
+        .funct7b5    (Funct7E[5]),
         .branchop    (BranchOpE),   // branch condition result from cmp unit
         .csrreaddata (CSRReadDataE),
         .TimeCounter (TimeCounter)
@@ -169,7 +169,7 @@ module ieu (
         .srcb      (SrcBE),
         .alucontrol(ALUControlE),
         .funct3    (Funct3E),
-        .funct7b5  (Funct7b5E),
+        .funct7    (Funct7E),
         .lui       (LuiE),
         .aluresult (ALUResultE)
     );
