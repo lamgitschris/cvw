@@ -27,8 +27,10 @@ module lsu (
     // MEM-stage ALU result for forwarding back to IEU
     output logic [31:0] IEUResultM
 );
-    // Memory address is the ALU result; forward it immediately for EX→MEM forwarding
-    assign IEUAdr    = ALUResultM;
+    // Memory address is the ALU result; wrap into DMEM window to avoid out-of-range accesses
+    localparam logic [31:0] DMEM_BASE = 32'h80000000;
+    localparam logic [31:0] DMEM_MASK = 32'h007FFFFF;
+    assign IEUAdr    = DMEM_BASE | (ALUResultM & DMEM_MASK);
     assign MemEn     = MemEnM;
     assign IEUResultM = ALUResultM;  // load data not yet available — forward ALU result
 
