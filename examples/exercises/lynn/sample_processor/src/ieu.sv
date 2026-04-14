@@ -93,7 +93,19 @@ module ieu (
     logic [6:0]  OpE;               // opcode in EX stage — used by csrfile HPM events
 
     always_ff @(posedge clk or posedge reset)
-        if (reset || FlushE) begin
+        if (reset) begin
+            RD1E          <= '0;  RD2E         <= '0;
+            PCE           <= '0;  PCPlus4E     <= '0;  ImmExtE <= '0;
+            Rs1E          <= '0;  Rs2E         <= '0;  RdE     <= '0;
+            RegWriteE     <= '0;  ALUSrcE      <= '0;
+            ALUControlE   <= '0;  ALUResultSrcE <= '0;
+            MemWriteE     <= '0;  ResultSrcE   <= '0;
+            BranchE       <= '0;  JumpE        <= '0;
+            MemEnE        <= '0;  LuiE         <= '0;
+            CSRSrcE_r     <= '0;
+            Funct3E       <= '0;  Funct7E    <= '0;
+            CSRAdrE       <= '0;  OpE          <= '0;
+        end else if (FlushE) begin
             RD1E          <= '0;  RD2E         <= '0;
             PCE           <= '0;  PCPlus4E     <= '0;  ImmExtE <= '0;
             Rs1E          <= '0;  Rs2E         <= '0;  RdE     <= '0;

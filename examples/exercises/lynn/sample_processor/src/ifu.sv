@@ -35,7 +35,11 @@ module ifu (
 
     // IF/ID pipeline register — flush takes priority over stall
     always_ff @(posedge clk or posedge reset)
-        if (reset || FlushD) begin
+        if (reset) begin
+            InstrD   <= 32'b0;
+            PCD      <= 32'b0;
+            PCPlus4D <= 32'b0;
+        end else if (FlushD) begin
             InstrD   <= 32'b0;
             PCD      <= 32'b0;
             PCPlus4D <= 32'b0;
