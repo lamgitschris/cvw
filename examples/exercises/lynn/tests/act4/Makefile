@@ -22,8 +22,10 @@ $(STAMP): Makefile
 		WORKDIR=$(WORK_DIR) \
 		EXTENSIONS=I,Zicntr,Zihpm,Zicsr,Zmmul \
 		--jobs $$(nproc)
-	@rm -f $(ELFS_DIR)/Zicntr/*csrrc*
-	@rm -f $(ELFS_DIR)/Zihpm/*csrrc*
+	@rm -rf $(ELFS_DIR)/Zicsr
+	@rm -f  $(ELFS_DIR)/Zicntr/*csrrc*
+	@rm -f  $(ELFS_DIR)/Zihpm/*csrrc*
+	@rm -f  $(ELFS_DIR)/Zmmul/*mulh*
 	@touch $(STAMP)
 
 .PHONY: list-elfs

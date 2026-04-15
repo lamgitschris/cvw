@@ -15,6 +15,8 @@
 .extern or_test
 .extern and_test
 .extern sub_test
+.extern beq_test
+.extern slt_test
 
 // Shift/compare tests
 .extern sll_test
