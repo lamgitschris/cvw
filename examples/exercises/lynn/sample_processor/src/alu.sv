@@ -1,5 +1,7 @@
 // alu.sv
 // 32-bit ALU — supports RV32I arithmetic/logic operations + Zmmul multiply
+// Optimized Zmmul implementation: one shared multiplier serves
+// mul, mulh, mulhsu, and mulhu.
 
 module alu (
     input  logic [31:0] srca, srcb,
@@ -11,17 +13,15 @@ module alu (
 );
 
     logic [31:0] condinvb, sum, slt, sltu;
-    logic [63:0] MulUU;
-    logic signed [63:0] MulSS, MulSU;
     logic        sub;
     logic        overflow, neg, lt;
     logic [4:0]  shamt;
 
-    assign shamt = srcb[4:0];
+    // One shared multiplier for all Zmmul ops
+    logic signed [32:0] mul_a, mul_b;
+    logic signed [65:0] mul_p;
 
-    assign MulUU = {32'b0, srca} * {32'b0, srcb};
-    assign MulSS = $signed({{32{srca[31]}}, srca}) * $signed({{32{srcb[31]}}, srcb});
-    assign MulSU = $signed({{32{srca[31]}}, srca}) * $signed({32'b0, srcb});
+    assign shamt = srcb[4:0];
 
     // SUB only for R-type subtract
     assign sub = (alucontrol == 3'b011) && (funct3 == 3'b000) && funct7[5];
@@ -32,8 +32,36 @@ module alu (
     assign overflow = (srca[31] ^ condinvb[31]) & (srca[31] ^ sum[31]);
     assign neg      = sum[31];
     assign lt       = neg ^ overflow;
-    assign slt  = {31'b0, ($signed(srca) < $signed(srcb))};
+    assign slt      = {31'b0, ($signed(srca) < $signed(srcb))};
     assign sltu     = {31'b0, (srca < srcb)};
+
+    // Select operand sign extension based on multiply variant:
+    //   mul    : low 32 bits only, signedness does not matter for low half
+    //   mulh   : signed x signed
+    //   mulhsu : signed x unsigned
+    //   mulhu  : unsigned x unsigned
+    always_comb begin
+        unique case (funct3)
+            3'b001: begin // mulh
+                mul_a = {srca[31], srca};
+                mul_b = {srcb[31], srcb};
+            end
+            3'b010: begin // mulhsu
+                mul_a = {srca[31], srca};
+                mul_b = {1'b0, srcb};
+            end
+            3'b011: begin // mulhu
+                mul_a = {1'b0, srca};
+                mul_b = {1'b0, srcb};
+            end
+            default: begin // mul (and safe default)
+                mul_a = {srca[31], srca};
+                mul_b = {srcb[31], srcb};
+            end
+        endcase
+    end
+
+    assign mul_p = mul_a * mul_b;
 
     always_comb begin
         if (lui) begin
@@ -54,9 +82,9 @@ module alu (
                         3'b011: aluresult = sltu;                      // sltu/sltiu
                         3'b100: aluresult = srca ^ srcb;               // xor/xori
                         3'b101: begin
-                                if (funct7[5]) aluresult = $signed(srca) >>> shamt; // sra/srai
-                                else           aluresult = srca >> shamt; // srl/srli
-                                end
+                            if (funct7[5]) aluresult = $signed(srca) >>> shamt; // sra/srai
+                            else           aluresult = srca >> shamt;            // srl/srli
+                        end
                         3'b110: aluresult = srca | srcb;               // or/ori
                         3'b111: aluresult = srca & srcb;               // and/andi
                         default: aluresult = 32'bx;
@@ -64,12 +92,12 @@ module alu (
                 end
 
                 3'b010: begin
-                    // Zmmul
+                    // Zmmul using one shared multiplier
                     case (funct3)
-                        3'b000: aluresult = MulSS[31:0];    // mul
-                        3'b001: aluresult = MulSS[63:32];   // mulh
-                        3'b010: aluresult = MulSU[63:32];   // mulhsu
-                        3'b011: aluresult = MulUU[63:32];   // mulhu
+                        3'b000: aluresult = mul_p[31:0];   // mul
+                        3'b001: aluresult = mul_p[63:32];  // mulh
+                        3'b010: aluresult = mul_p[63:32];  // mulhsu
+                        3'b011: aluresult = mul_p[63:32];  // mulhu
                         default: aluresult = 32'bx;
                     endcase
                 end

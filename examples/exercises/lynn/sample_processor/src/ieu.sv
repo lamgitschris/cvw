@@ -200,7 +200,7 @@ module ieu (
     // Result written to Rd:
     //   ALUResultSrcE=1 (JAL/JALR): write PC+4 as link address
     //   ALUResultSrcE=0 (all else):  write ALU result
-    assign IEUResultE = ALUResultSrcE ? (PCE + 32'd4) : ALUResultE;
+    assign IEUResultE = ALUResultSrcE ? PCPlus4E : ALUResultE;
 
     // Branch/jump target PC:
     //   JALR (jump, register base): target = rs1 + imm = ALUResultE

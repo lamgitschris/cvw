@@ -20,12 +20,10 @@ $(STAMP): Makefile
 	@$(MAKE) -C $(RISCV_ARCH_TEST) \
 		CONFIG_FILES=$(CONFIG_FILES) \
 		WORKDIR=$(WORK_DIR) \
-		EXTENSIONS=I,Zicntr,Zihpm,Zicsr,Zmmul \
+		EXTENSIONS=I,Zicntr,Zicsr,Zmmul \
 		--jobs $$(nproc)
 	@rm -rf $(ELFS_DIR)/Zicsr
 	@rm -f  $(ELFS_DIR)/Zicntr/*csrrc*
-	@rm -f  $(ELFS_DIR)/Zihpm/*csrrc*
-	@rm -f  $(ELFS_DIR)/Zmmul/*mulh*
 	@touch $(STAMP)
 
 .PHONY: list-elfs
