@@ -1,3 +1,6 @@
+// csrfile.sv
+// Counts clock cycles and instructions retired; needed for coremark
+
 module csrfile (
     input  logic        clk,
     input  logic        reset,

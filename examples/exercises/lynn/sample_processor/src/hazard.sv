@@ -1,16 +1,5 @@
 // hazard.sv
 // Hazard detection and forwarding unit
-//
-// Forwarding (ForwardAE / ForwardBE):
-//   2'b00 = register file value (no hazard)
-//   2'b01 = WB-stage result
-//   2'b10 = MEM-stage result  (takes priority — more recent write)
-//
-// Load-use stall: a load in EX followed by an instruction in ID that reads
-//   the same register requires stalling IF and ID for one cycle and flushing EX.
-//
-// Control hazard: branches/jumps are resolved at the end of EX.
-//   Flush IF/ID (FlushD) and ID/EX (FlushE) to squash the two wrong-path fetches.
 
 module hazard (
     input  logic [4:0]  Rs1E, Rs2E, RdE,
@@ -25,7 +14,7 @@ module hazard (
 );
     logic LWStall;
 
-    // Forwarding: MEM result has priority over WB (it is more recently written)
+    // Forwarding: MEM result has priority over WB
     always_comb begin
         ForwardAE = (RegWriteM && RdM != '0 && RdM == Rs1E) ? 2'b10 :
                     (RegWriteW && RdW != '0 && RdW == Rs1E) ? 2'b01 : 2'b00;

@@ -1,10 +1,5 @@
 // lsu.sv
-// Load/Store Unit
-//
-// Spans the Memory and Writeback pipeline stages (LSU blue box in block diagram).
-//
-// Memory:   byte-enable generation for stores, load data alignment, DTIM interface
-// Writeback: selects result written back to the register file
+// Load-store unit: performs memory accesses and implements MEM/WB pipeline register for loads and stores
 
 module lsu (
     input  logic        clk, reset,
@@ -20,23 +15,20 @@ module lsu (
     output logic [31:0] WriteData,
     output logic        MemEn, WriteEn,
     output logic [3:0]  WriteByteEn,
-    // To IEU regfile (writeback)
+    // To IEU regfile
     output logic        RegWriteW,
     output logic [4:0]  RdW,
     output logic [31:0] ResultW,
     // MEM-stage ALU result for forwarding back to IEU
     output logic [31:0] IEUResultM
 );
-    // Memory address is the ALU result; forward raw — DMEM wrapping and MMIO
-    // interception are handled at the top level (riscvpipe.sv)
+    // Memory address is the ALU result
     assign IEUAdr    = ALUResultM;
     assign MemEn     = MemEnM;
     // Forward the actual MEM-stage value for ALU/CSR producers.
-    // Loads still rely on the load-use stall, so forwarding ReadData is not needed here.
     assign IEUResultM = CSRSrcM ? CSRReadDataM : ALUResultM;
-    // ----------------------------------------------------------------
+
     // Store byte enables and write data replication
-    // ----------------------------------------------------------------
     always_comb
         if (MemWriteM)
             case (Funct3M[1:0])
@@ -60,9 +52,7 @@ module lsu (
 
     assign WriteEn = |WriteByteEn;
 
-    // ----------------------------------------------------------------
     // Load data alignment
-    // ----------------------------------------------------------------
     logic [7:0]  ByteVal;
     logic [15:0] HalfVal;
     logic [31:0] AlignedData;
@@ -79,9 +69,7 @@ module lsu (
             default: AlignedData = ReadData;                      // LW
         endcase
 
-    // ----------------------------------------------------------------
     // MEM/WB pipeline register
-    // ----------------------------------------------------------------
     logic [31:0] ALUResultW, ReadDataW, CSRReadDataW;
     logic        ResultSrcW, CSRSrcW;
 
@@ -100,10 +88,7 @@ module lsu (
             CSRReadDataW <= CSRReadDataM;
         end
 
-    // ----------------------------------------------------------------
     // Writeback result mux
-    // Priority: CSR read data > memory load data > ALU result
-    // ----------------------------------------------------------------
     logic [31:0] ALUorMem;
     assign ALUorMem = ResultSrcW ? ReadDataW    : ALUResultW;
     assign ResultW  = CSRSrcW   ? CSRReadDataW : ALUorMem;

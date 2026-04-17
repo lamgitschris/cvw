@@ -1,3 +1,6 @@
+// ieu.sv
+// Integer Execution Unit: performs ALU operations, calculates branch targets, and interfaces with CSR file
+
 module ieu (
     input  logic        clk, reset,
     input  logic        FlushE,

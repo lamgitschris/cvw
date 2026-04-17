@@ -1,10 +1,5 @@
 // ifu.sv
-// Instruction Fetch Unit
-//
-// Contains the fetch stage and IF/ID pipeline register.
-// On a branch or jump (PCSrcE=1), redirects PC to PCTargetE.
-// Stalls both the PC register and IF/ID register on a load-use hazard.
-// Flushes the IF/ID register (inserts NOP) on a branch/jump taken.
+// Instruction Fetch Unit: maintains the PC, fetches instructions from IROM, and implements IF/ID pipeline register
 
 module ifu (
     input  logic        clk, reset,
@@ -17,7 +12,6 @@ module ifu (
 );
     logic [31:0] PCF, PCNextF, PCPlus4F;
 
-    // Allow entry address override from simulation plusarg
     logic [31:0] entry_addr;
     initial begin
         entry_addr = '0;

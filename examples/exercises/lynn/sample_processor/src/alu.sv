@@ -1,7 +1,5 @@
 // alu.sv
 // 32-bit ALU — supports RV32I arithmetic/logic operations + Zmmul multiply
-// Optimized Zmmul implementation: one shared multiplier serves
-// mul, mulh, mulhsu, and mulhu.
 
 module alu (
     input  logic [31:0] srca, srcb,
@@ -35,8 +33,7 @@ module alu (
     assign slt      = {31'b0, ($signed(srca) < $signed(srcb))};
     assign sltu     = {31'b0, (srca < srcb)};
 
-    // Select operand sign extension based on multiply variant:
-    //   mul    : low 32 bits only, signedness does not matter for low half
+    //   mul    : low 32 bits only, signedness does not matter
     //   mulh   : signed x signed
     //   mulhsu : signed x unsigned
     //   mulhu  : unsigned x unsigned
@@ -54,7 +51,7 @@ module alu (
                 mul_a = {1'b0, srca};
                 mul_b = {1'b0, srcb};
             end
-            default: begin // mul (and safe default)
+            default: begin // mul
                 mul_a = {srca[31], srca};
                 mul_b = {srcb[31], srcb};
             end
