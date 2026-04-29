@@ -4,11 +4,12 @@
 module lsu (
     input  logic        clk, reset,
     // From IEU EX/MEM register
-    input  logic [31:0] ALUResultM, WriteDataM,
+    input  logic [31:0] ALUResultM, WriteDataM, PCPlus4M,
     input  logic [4:0]  RdM,
-    input  logic        RegWriteM, MemWriteM, ResultSrcM, MemEnM, CSRSrcM,
+    input  logic        RegWriteM, MemWriteM, ResultSrcM, MemEnM, CSRSrcM, LinkM,
     input  logic [2:0]  Funct3M,
     input  logic [31:0] CSRReadDataM,
+    input  logic        ValidM,
     // DTIM interface
     input  logic [31:0] ReadData,
     output logic [31:0] IEUAdr,
@@ -19,12 +20,13 @@ module lsu (
     output logic        RegWriteW,
     output logic [4:0]  RdW,
     output logic [31:0] ResultW,
+    output logic        RetireW,
     // MEM-stage ALU result for forwarding back to IEU
     output logic [31:0] IEUResultM
 );
     // Memory address is the ALU result
-    assign IEUAdr    = ALUResultM;
-    assign MemEn     = MemEnM;
+    assign IEUAdr     = ALUResultM;
+    assign MemEn      = MemEnM;
     // Forward the actual MEM-stage value for ALU/CSR producers.
     assign IEUResultM = CSRSrcM ? CSRReadDataM : ALUResultM;
 
@@ -70,27 +72,33 @@ module lsu (
         endcase
 
     // MEM/WB pipeline register
-    logic [31:0] ALUResultW, ReadDataW, CSRReadDataW;
-    logic        ResultSrcW, CSRSrcW;
+    logic [31:0] ALUResultW, ReadDataW, CSRReadDataW, PCPlus4W;
+    logic        ResultSrcW, CSRSrcW, LinkW, ValidW;
 
     always_ff @(posedge clk or posedge reset)
         if (reset) begin
-            ALUResultW   <= '0;  ReadDataW    <= '0;  RdW      <= '0;
-            RegWriteW    <= '0;  ResultSrcW   <= '0;  CSRSrcW  <= '0;
-            CSRReadDataW <= '0;
+            ALUResultW   <= '0;  ReadDataW    <= '0;  PCPlus4W    <= '0;  RdW      <= '0;
+            RegWriteW    <= '0;  ResultSrcW   <= '0;  CSRSrcW     <= '0;  LinkW <= '0;
+            CSRReadDataW <= '0;  ValidW       <= '0;
         end else begin
             ALUResultW   <= ALUResultM;
             ReadDataW    <= AlignedData;
+            PCPlus4W     <= PCPlus4M;
             RdW          <= RdM;
             RegWriteW    <= RegWriteM;
             ResultSrcW   <= ResultSrcM;
             CSRSrcW      <= CSRSrcM;
+            LinkW        <= LinkM;
             CSRReadDataW <= CSRReadDataM;
+            ValidW       <= ValidM;
         end
 
+    assign RetireW = ValidW;
+
     // Writeback result mux
-    logic [31:0] ALUorMem;
-    assign ALUorMem = ResultSrcW ? ReadDataW    : ALUResultW;
-    assign ResultW  = CSRSrcW   ? CSRReadDataW : ALUorMem;
+    logic [31:0] BaseResultW, ALUorMem;
+    assign BaseResultW = LinkW ? PCPlus4W : ALUResultW;
+    assign ALUorMem    = ResultSrcW ? ReadDataW   : BaseResultW;
+    assign ResultW     = CSRSrcW   ? CSRReadDataW : ALUorMem;
 
 endmodule

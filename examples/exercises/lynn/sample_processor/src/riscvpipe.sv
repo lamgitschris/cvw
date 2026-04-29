@@ -29,23 +29,24 @@ module riscvpipe (
     logic [31:0] PCTargetE;
 
     // IEU → LSU
-    logic [31:0] ALUResultM, WriteDataM;
+    logic [31:0] ALUResultM, WriteDataM, PCPlus4M;
     logic [4:0]  RdM;
-    logic        RegWriteM, MemWriteM, ResultSrcM, MemEnM, CSRSrcM;
+    logic        RegWriteM, MemWriteM, ResultSrcM, MemEnM, CSRSrcM, LinkM;
     logic [2:0]  Funct3M;
     logic [31:0] CSRReadDataM;
+    logic        ValidM;
 
     // LSU → IEU
     logic        RegWriteW;
     logic [4:0]  RdW;
     logic [31:0] ResultW;
+    logic        RetireW;
 
     // LSU → IEU
     logic [31:0] IEUResultM;
 
     // Hazard → IFU/IEU
     logic        StallF, StallD, FlushD, FlushE;
-    logic [1:0]  ForwardAE, ForwardBE;
 
     // IEU → Hazard
     logic [4:0]  Rs1E, Rs2E, RdE;
@@ -96,21 +97,23 @@ module riscvpipe (
         .FlushE,
         .InstrD, .PCD, .PCPlus4D,
         .RegWriteW, .RdW, .ResultW,
-        .ForwardAE, .ForwardBE,
         .IEUResultM,
+        .RetireW,
         .PCSrcE, .PCTargetE,
-        .ALUResultM, .WriteDataM, .RdM,
-        .RegWriteM, .MemWriteM, .ResultSrcM, .MemEnM, .CSRSrcM,
+        .ALUResultM, .WriteDataM, .PCPlus4M, .RdM,
+        .RegWriteM, .MemWriteM, .ResultSrcM, .MemEnM, .CSRSrcM, .LinkM,
         .Funct3M, .CSRReadDataM,
         .Rs1E, .Rs2E, .RdE, .ResultSrcE,
+        .ValidM,
         .TimeCounter
     );
 
     lsu lsu_inst (
         .clk, .reset,
-        .ALUResultM, .WriteDataM, .RdM,
-        .RegWriteM, .MemWriteM, .ResultSrcM, .MemEnM, .CSRSrcM,
+        .ALUResultM, .WriteDataM, .PCPlus4M, .RdM,
+        .RegWriteM, .MemWriteM, .ResultSrcM, .MemEnM, .CSRSrcM, .LinkM,
         .Funct3M, .CSRReadDataM,
+        .ValidM,
         .ReadData   (ReadDataFinal),    // MMIO-muxed read data
         .IEUAdr     (IEUAdrRaw),        // raw address; wrapping done above
         .WriteData,
@@ -118,16 +121,14 @@ module riscvpipe (
         .WriteEn    (WriteEnRaw),
         .WriteByteEn(WriteByteEnRaw),
         .RegWriteW, .RdW, .ResultW,
+        .RetireW,
         .IEUResultM
     );
 
     hazard hazard_inst (
-        .Rs1E, .Rs2E, .RdE, .ResultSrcE,
-        .RdM, .RdW,
-        .RegWriteM, .RegWriteW,
+        .RdE, .ResultSrcE,
         .Rs1D(InstrD[19:15]), .Rs2D(InstrD[24:20]),
         .PCSrcE,
-        .ForwardAE, .ForwardBE,
         .StallF, .StallD,
         .FlushD, .FlushE
     );
