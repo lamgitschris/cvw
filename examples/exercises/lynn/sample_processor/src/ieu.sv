@@ -1,6 +1,7 @@
 // ieu.sv
+// Christian LamAlvarez and Anirudh Gupta
 // Integer Execution Unit: performs ALU operations, calculates branch targets,
-// interfaces with CSR file, performs inline branch compare, and tracks valid instructions into MEM.
+
 
 module ieu (
     input  logic        clk, reset,
@@ -24,6 +25,7 @@ module ieu (
     output logic [63:0] TimeCounter
 );
 
+    // Decode-stage outputs from the register file, extender, and main controller.
     logic [31:0] RD1D, RD2D, ImmExtD;
     logic [2:0]  ImmSrcD;
     logic        RegWriteD, ALUResultSrcD, MemWriteD, ResultSrcD;
@@ -65,6 +67,7 @@ module ieu (
     assign CSRSrcD = (InstrD[6:0] == 7'b1110011);
     assign ValidD  = (InstrD != 32'b0);
 
+    // ID/EX pipeline register.
     logic [31:0] RD1E, RD2E, PCE, PCPlus4E, ImmExtE;
     logic        RegWriteE, ALUResultSrcE, MemWriteE;
     logic        BranchE, JumpE, MemEnE, LuiE, CSRSrcE_r;
@@ -90,6 +93,7 @@ module ieu (
             CSRAdrE        <= '0;
             ValidE         <= '0;
         end else if (FlushE) begin
+            // Flush inserts a bubble into EX after a taken branch or load-use stall.
             RD1E           <= '0;  RD2E          <= '0;
             PCE            <= '0;  PCPlus4E      <= '0;  ImmExtE <= '0;
             Rs1E           <= '0;  Rs2E          <= '0;  RdE     <= '0;
@@ -126,6 +130,7 @@ module ieu (
             ValidE         <= ValidD;
         end
 
+    // Forwarding, ALU inputs, branch decision, and CSR read all happen in EX.
     logic [31:0] FSrcAE, FSrcBE;
     logic [31:0] SrcAE, SrcBE;
     logic        MatchMA, MatchWA, MatchMB, MatchWB;
@@ -145,8 +150,8 @@ module ieu (
         .TimeCounter (TimeCounter)
     );
 
-    // Direct forwarding logic inside IEU to avoid an encode/decode control path
-    // from hazard into the operand muxes. MEM has priority over WB.
+    // Forward directly inside the IEU so the operand muxes do not depend on an
+    // extra encoded control path from the hazard unit. MEM has priority over WB.
     assign MatchMA = RegWriteM && (RdM != 5'd0) && (RdM == Rs1E);
     assign MatchWA = RegWriteW && (RdW != 5'd0) && (RdW == Rs1E) && !MatchMA;
     assign MatchMB = RegWriteM && (RdM != 5'd0) && (RdM == Rs2E);
@@ -159,6 +164,8 @@ module ieu (
                  MatchWB ? ResultW    : RD2E;
     end
 
+    // ALUSrcE[1] selects PC for auipc/branch/jump address generation.
+    // ALUSrcE[0] selects the sign-extended immediate for immediate ops and addresses.
     assign SrcAE = ALUSrcE[1] ? PCE     : FSrcAE;
     assign SrcBE = ALUSrcE[0] ? ImmExtE : FSrcBE;
 
@@ -172,6 +179,7 @@ module ieu (
         .aluresult (ALUResultE)
     );
 
+    // Branches compare the forwarded register operands, not the ALU-selected inputs.
     assign LtE  = $signed(FSrcAE) < $signed(FSrcBE);
     assign LtuE = FSrcAE < FSrcBE;
 
@@ -183,18 +191,18 @@ module ieu (
             3'b101:  BranchOpE = ~LtE;               // BGE
             3'b110:  BranchOpE = LtuE;               // BLTU
             3'b111:  BranchOpE = ~LtuE;              // BGEU
-            default:  BranchOpE = 1'b0;
+            default: BranchOpE = 1'b0;
         endcase
     end
 
-    // Compute the JALR target with a dedicated adder so next-PC generation
-    // does not have to wait on the full ALU datapath. Also keep the link-result
-    // mux out of EX by carrying PC+4 and the link-select bit into MEM/WB.
+    // JALR uses a dedicated target adder so next-PC generation does not wait on
+    // the full ALU datapath. Link results are carried forward separately into MEM/WB.
     assign JalrTargetE_raw = FSrcAE + ImmExtE;
     assign JalrTargetE     = {JalrTargetE_raw[31:1], 1'b0};
     assign PCTargetE       = (JumpE & ~ALUSrcE[1]) ? JalrTargetE : (PCE + ImmExtE);
     assign PCSrcE          = (BranchE & BranchOpE) | JumpE;
 
+    // EX/MEM pipeline register.
     always_ff @(posedge clk or posedge reset)
         if (reset) begin
             ALUResultM   <= '0;  WriteDataM    <= '0;  PCPlus4M     <= '0;  RdM          <= '0;

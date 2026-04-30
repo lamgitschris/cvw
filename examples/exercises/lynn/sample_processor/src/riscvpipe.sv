@@ -1,11 +1,7 @@
 // riscvpipe.sv
+// Christian LamAlvarez and Anirudh Gupta
 // Top-level 5-stage pipelined RV32I processor
-//
-// Structure mirrors the block diagram:
-//   IFU    — Instruction Fetch Unit (Fetch stage)
-//   IEU    — Integer Execution Unit (Decode + Execute stages)
-//   LSU    — Load/Store Unit        (Memory + Writeback stages)
-//   Hazard — Forwarding, stall, and flush control
+
 
 `include "parameters.svh"
 
@@ -21,14 +17,14 @@ module riscvpipe (
     output logic [3:0]  WriteByteEn   // data memory byte enables
 );
 
-    // IFU → IEU
+    // IFU -> IEU
     logic [31:0] InstrD, PCD, PCPlus4D;
 
-    // IEU → IFU
+    // IEU -> IFU
     logic        PCSrcE;
     logic [31:0] PCTargetE;
 
-    // IEU → LSU
+    // IEU -> LSU
     logic [31:0] ALUResultM, WriteDataM, PCPlus4M;
     logic [4:0]  RdM;
     logic        RegWriteM, MemWriteM, ResultSrcM, MemEnM, CSRSrcM, LinkM;
@@ -36,23 +32,23 @@ module riscvpipe (
     logic [31:0] CSRReadDataM;
     logic        ValidM;
 
-    // LSU → IEU
+    // LSU -> IEU
     logic        RegWriteW;
     logic [4:0]  RdW;
     logic [31:0] ResultW;
     logic        RetireW;
 
-    // LSU → IEU
+    // LSU -> IEU forwarding value
     logic [31:0] IEUResultM;
 
-    // Hazard → IFU/IEU
+    // Hazard -> IFU/IEU
     logic        StallF, StallD, FlushD, FlushE;
 
-    // IEU → Hazard
+    // IEU -> Hazard
     logic [4:0]  Rs1E, Rs2E, RdE;
     logic        ResultSrcE;
 
-    // IEU → top-level: timer counter for MMIO
+    // Time counter is exposed through the MMIO addresses used by CoreMark.
     logic [63:0] TimeCounter;
 
     logic [31:0] IEUAdrRaw;
@@ -62,13 +58,13 @@ module riscvpipe (
     assign IsTimeMMIO = IsTimeLo | IsTimeHi;
 
     localparam logic [31:0] DMEM_BASE = 32'h8000_0000;
-    localparam logic [31:0] DMEM_MASK = 32'h007F_FFFF; // 8 MB − 1
+    localparam logic [31:0] DMEM_MASK = 32'h007F_FFFF; // 8 MB - 1
     logic [31:0] DAdrWrapped;
     assign DAdrWrapped = DMEM_BASE | (IEUAdrRaw & DMEM_MASK);
 
+    // Normal data accesses are wrapped into the DMEM window. Timer MMIO accesses bypass that logic.
     assign IEUAdr = IsTimeMMIO ? IEUAdrRaw : {DAdrWrapped[31:2], 2'b00};
 
-    // ReadData mux:
     logic [31:0] ReadDataFinal;
     assign ReadDataFinal = IsTimeMMIO ?
                            (IsTimeLo ? TimeCounter[31:0] : TimeCounter[63:32]) :
@@ -80,9 +76,7 @@ module riscvpipe (
     assign WriteEn     = WriteEnRaw;
     assign WriteByteEn = WriteByteEnRaw;
 
-    // ----------------------------------------------------------------
-    // Pipeline stages
-    // ----------------------------------------------------------------
+    // Pipeline stage instances
     ifu ifu_inst (
         .clk, .reset,
         .StallF, .StallD, .FlushD,
@@ -114,8 +108,8 @@ module riscvpipe (
         .RegWriteM, .MemWriteM, .ResultSrcM, .MemEnM, .CSRSrcM, .LinkM,
         .Funct3M, .CSRReadDataM,
         .ValidM,
-        .ReadData   (ReadDataFinal),    // MMIO-muxed read data
-        .IEUAdr     (IEUAdrRaw),        // raw address; wrapping done above
+        .ReadData   (ReadDataFinal),
+        .IEUAdr     (IEUAdrRaw),
         .WriteData,
         .MemEn      (MemEnRaw),
         .WriteEn    (WriteEnRaw),

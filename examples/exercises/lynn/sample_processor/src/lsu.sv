@@ -1,5 +1,7 @@
 // lsu.sv
-// Load-store unit: performs memory accesses and implements MEM/WB pipeline register for loads and stores
+// Christian LamAlvarez and Anirudh Gupta
+// Load-store unit: performs memory accesses and implements MEM/WB pipeline register for loads and stores; also handles load data alignment and store byte enables
+
 
 module lsu (
     input  logic        clk, reset,
@@ -24,13 +26,14 @@ module lsu (
     // MEM-stage ALU result for forwarding back to IEU
     output logic [31:0] IEUResultM
 );
-    // Memory address is the ALU result
+    // Memory requests are addressed by the EX-stage ALU result.
     assign IEUAdr     = ALUResultM;
     assign MemEn      = MemEnM;
-    // Forward the actual MEM-stage value for ALU/CSR producers.
+
+    // Forward the value that would be visible to the next instruction from MEM.
     assign IEUResultM = CSRSrcM ? CSRReadDataM : ALUResultM;
 
-    // Store byte enables and write data replication
+    // Generate byte enables and replicate store data for subword writes.
     always_comb
         if (MemWriteM)
             case (Funct3M[1:0])
@@ -54,7 +57,7 @@ module lsu (
 
     assign WriteEn = |WriteByteEn;
 
-    // Load data alignment
+    // Extract the addressed byte or halfword before applying sign/zero extension.
     logic [7:0]  ByteVal;
     logic [15:0] HalfVal;
     logic [31:0] AlignedData;
@@ -64,14 +67,14 @@ module lsu (
 
     always_comb
         case (Funct3M)
-            3'b000: AlignedData = {{24{ByteVal[7]}},  ByteVal};   // LB  (sign-extend)
-            3'b001: AlignedData = {{16{HalfVal[15]}}, HalfVal};   // LH  (sign-extend)
-            3'b100: AlignedData = {24'b0, ByteVal};               // LBU (zero-extend)
-            3'b101: AlignedData = {16'b0, HalfVal};               // LHU (zero-extend)
+            3'b000: AlignedData = {{24{ByteVal[7]}},  ByteVal};   // LB
+            3'b001: AlignedData = {{16{HalfVal[15]}}, HalfVal};   // LH
+            3'b100: AlignedData = {24'b0, ByteVal};               // LBU
+            3'b101: AlignedData = {16'b0, HalfVal};               // LHU
             default: AlignedData = ReadData;                      // LW
         endcase
 
-    // MEM/WB pipeline register
+    // MEM/WB register carries the selected writeback sources into the final stage.
     logic [31:0] ALUResultW, ReadDataW, CSRReadDataW, PCPlus4W;
     logic        ResultSrcW, CSRSrcW, LinkW, ValidW;
 
@@ -95,7 +98,7 @@ module lsu (
 
     assign RetireW = ValidW;
 
-    // Writeback result mux
+    // Link instructions select PC+4. Loads and CSR reads override that base result as needed.
     logic [31:0] BaseResultW, ALUorMem;
     assign BaseResultW = LinkW ? PCPlus4W : ALUResultW;
     assign ALUorMem    = ResultSrcW ? ReadDataW   : BaseResultW;

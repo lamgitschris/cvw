@@ -1,7 +1,7 @@
 // csrfile.sv
-// Counts clock cycles and instructions retired; needed for CoreMark/Zicntr.
-// instret is stored as a true retirement counter, but CSR reads in EX must
-// see older valid instructions currently in MEM and WB as already retired.
+// Christian LamAlvarez and Anirudh Gupta
+// CSR file for RV32I + Zmmul multiply instructions; supports time and instret CSRs
+
 
 module csrfile (
     input  logic        clk,
@@ -17,11 +17,11 @@ module csrfile (
     logic [63:0] instret;
     logic [63:0] instret_visible;
 
-    // CSR reads happen in EX. Older valid instructions in MEM and WB should
-    // already be visible in instret even though the stored counter is only
-    // updated once an instruction actually retires in WB.
+    // CSR reads occur before writeback completes, so the raw instret register can be slightly behind.
+    // Use a visible instret value that also accounts for the older valid instructions currently in MEM/WB.
     assign instret_visible = instret + {{63{1'b0}}, ValidM} + {{63{1'b0}}, RetireW};
 
+    // Only the counters needed by this design are implemented. Everything else reads as zero.
     always_comb begin
         case (csradr)
             12'hC00, 12'hC01: csrreaddata = time_cnt[31:0];
